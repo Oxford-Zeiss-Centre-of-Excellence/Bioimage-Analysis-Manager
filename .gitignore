@@ -1,0 +1,10 @@
+CLAUDE.md
+AGENTS.md
+
+.pixi
+__pycache__
+
+.claude/
+.vscode/
+.opencode/
+.venv/

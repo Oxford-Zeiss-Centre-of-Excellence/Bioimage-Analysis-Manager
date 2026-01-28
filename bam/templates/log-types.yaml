@@ -1,0 +1,44 @@
+# BAM Work Log Task Types
+# These types appear in the task type dropdown when logging work.
+# Add, remove, or modify types to fit your workflow.
+
+types:
+  - name: analysis
+    description: Image analysis, segmentation, quantification
+    color: blue
+
+  - name: dev
+    description: Code development, scripting, pipeline building
+    color: green
+
+  - name: compute
+    description: Running compute jobs, batch processing
+    color: orange
+
+  - name: writing
+    description: Documentation, manuscripts, reports
+    color: purple
+
+  - name: meeting
+    description: Meetings, discussions, presentations
+    color: yellow
+
+  - name: support
+    description: Helping others, troubleshooting, training
+    color: cyan
+
+  - name: admin
+    description: Administrative tasks, emails, planning
+    color: gray
+
+  - name: review
+    description: Code review, paper review, QC
+    color: pink
+
+  - name: learning
+    description: Reading papers, tutorials, courses
+    color: teal
+
+  - name: acquisition
+    description: Data acquisition, imaging sessions
+    color: red

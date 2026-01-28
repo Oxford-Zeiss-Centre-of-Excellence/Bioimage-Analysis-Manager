@@ -1,0 +1,270 @@
+# BAM Manifest Template
+# All fields documented. Only project.name is required.
+# Copy this file to your project root and customize.
+
+# ============================================================================
+# PROJECT - Core project metadata (REQUIRED)
+# ============================================================================
+project:
+  name: ""                    # REQUIRED: Project name/identifier
+  created: 2024-01-01         # Auto-set on init
+  status: active              # active | completed | archived | on-hold
+
+# ============================================================================
+# PEOPLE - Team members and collaborators
+# ============================================================================
+people:
+  analyst: ""                 # Primary analyst name
+  collaborators:              # List of collaborators
+    - name: ""
+      role: ""                # PI | collaborator | consultant | student
+      email: ""
+      affiliation: ""
+
+# ============================================================================
+# TAGS - Categorization labels
+# ============================================================================
+tags:
+  - microscopy
+  - segmentation
+  # Add relevant tags for your project
+
+# ============================================================================
+# DATA - Data source and local cache configuration
+# ============================================================================
+data:
+  enabled: true               # Set false if project has no external data
+  endpoint: ""                # Storage label: Local | I Drive | MSD CEPH | RFS | HDD1
+  source: ""                  # Original data path (e.g., /mnt/ceph/project/raw)
+  local: ""                   # Local cache path (e.g., /data/local/project)
+  locally_mounted: false      # True if source is directly accessible
+  description: ""             # What the data contains
+  format: ""                  # tiff | zarr | hdf5 | nd2 | czi | etc.
+  raw_size_gb: null           # Approximate raw data size
+
+# ============================================================================
+# ACQUISITION - Imaging parameters and metadata
+# ============================================================================
+acquisition:
+  microscope: ""              # Microscope model/name
+  modality: ""                # confocal | widefield | lightsheet | EM | etc.
+  objective: ""               # e.g., "40x/1.3 Oil"
+  channels:
+    - name: ""
+      fluorophore: ""
+      excitation_nm: null
+      emission_nm: null
+  voxel_size:
+    x_um: null
+    y_um: null
+    z_um: null
+  time_interval_s: null       # For timelapse
+  notes: ""
+
+# ============================================================================
+# TOOLS - Software and analysis environment
+# ============================================================================
+tools:
+  environment: ""             # conda | pixi | venv | docker
+  env_file: ""                # Path to environment.yaml or requirements.txt
+  languages:
+    - python
+    # - R
+    # - fiji-macro
+  key_packages:
+    - name: napari
+      version: ""
+    - name: cellpose
+      version: ""
+  scripts_dir: ""             # Path to analysis scripts
+  notebooks_dir: ""           # Path to Jupyter notebooks
+
+# ============================================================================
+# BILLING - Project funding and time tracking
+# ============================================================================
+billing:
+  fund_code: ""               # Institutional fund/grant code
+  hourly_rate: null           # If applicable
+  budget_hours: null          # Allocated hours
+  spent_hours: null           # Auto-calculated from worklog
+  start_date: null
+  end_date: null
+  notes: ""
+
+# ============================================================================
+# QUALITY - QC and validation tracking
+# ============================================================================
+quality:
+  status: pending             # pending | in-progress | passed | failed
+  checks:
+    - name: "Data integrity"
+      status: pending         # pending | passed | failed | skipped
+      date: null
+      notes: ""
+    - name: "Segmentation accuracy"
+      status: pending
+      date: null
+      notes: ""
+  reviewer: ""
+  review_date: null
+  notes: ""
+
+# ============================================================================
+# PUBLICATION - Publication and sharing information
+# ============================================================================
+publication:
+  status: none                # none | in-prep | submitted | revision | accepted | published
+  target_journal: ""
+  manuscript_path: ""         # Path to manuscript file
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # FIGURES - Hierarchical figure tracking with full lineage
+  #
+  # Structure: Figure → Panel → Element (infinite nesting supported)
+  #   - Containers (Figure, Panel): id, title, description, children[]
+  #   - Elements (leaf nodes): full lineage tracking
+  #
+  # Element source_type options:
+  #   - script: Generated by a script (Python, R, etc.)
+  #   - software: Generated by software (Prism, SPSS, ImageJ, Excel, etc.)
+  #   - manual: Manual editing (Illustrator, Inkscape, PowerPoint)
+  #   - raw: Raw acquisition (microscope image, photo)
+  # ──────────────────────────────────────────────────────────────────────────
+  figures:
+    # Example: Complete figure hierarchy
+    - id: fig1
+      title: "Experimental Setup"
+      description: "Overview of sample preparation and imaging"
+      children:
+        # Panel 1a
+        - id: "1a"
+          title: "Sample Preparation"
+          children:
+            # Script-generated plot
+            - id: schematic
+              output_path: "figures/fig1/1a-schematic.pdf"
+              source_type: script
+              source_ref: "scripts/plot_schematic.py"
+              input_files:
+                - "data/protocol.yaml"
+              parameters: "--style publication"
+              status: ready
+              version: 2
+              description: "Workflow schematic"
+              created: 2024-01-15
+              updated: 2024-01-20
+
+            # Software-generated (e.g., GraphPad Prism)
+            - id: bar-chart
+              output_path: "figures/fig1/1a-bars.pdf"
+              source_type: software
+              source_ref: "GraphPad Prism 9"
+              input_files:
+                - "data/measurements.pzfx"
+              parameters: "Bar graph, mean ± SEM, unpaired t-test, *p<0.05"
+              status: ready
+              version: 1
+              description: "Quantification of sample purity"
+              created: 2024-01-18
+
+        # Panel 1b
+        - id: "1b"
+          title: "Microscopy Setup"
+          children:
+            # Raw microscopy image
+            - id: confocal
+              output_path: "figures/fig1/1b-confocal.tif"
+              source_type: raw
+              source_ref: "Zeiss LSM 880"
+              input_files:
+                - "raw/sample1_tile01.czi"
+              parameters: "40x/1.3 Oil, 488nm/561nm, z-stack 0.5µm"
+              status: ready
+              version: 1
+              description: "Representative confocal z-projection"
+              created: 2024-01-10
+
+            # Manual composite (Illustrator)
+            - id: composite
+              output_path: "figures/fig1/1b-composite.ai"
+              source_type: manual
+              source_ref: "Adobe Illustrator 2024"
+              input_files:
+                - "figures/fig1/1b-confocal.tif"
+                - "figures/fig1/1b-scale.svg"
+              parameters: "Added scale bar, adjusted contrast"
+              status: draft
+              version: 1
+              description: "Final composite with annotations"
+              created: 2024-01-22
+
+    # Example: Simple figure with direct elements (no panels)
+    - id: fig2
+      title: "Analysis Results"
+      children:
+        - id: heatmap
+          output_path: "figures/fig2/heatmap.pdf"
+          source_type: script
+          source_ref: "notebooks/analysis.ipynb"
+          input_files:
+            - "data/processed/matrix.csv"
+          parameters: "Cell 15, seaborn clustermap"
+          status: draft
+          version: 1
+          description: "Correlation heatmap"
+          created: 2024-01-25
+
+  preprint_doi: ""
+  published_doi: ""
+  github_repo: ""
+  zenodo_doi: ""              # For data/code archive
+  notes: ""
+
+# ============================================================================
+# ARCHIVE - Long-term storage and preservation
+# ============================================================================
+archive:
+  status: active              # active | pending-archive | archived
+  archive_date: null
+  archive_location: ""        # e.g., institutional archive path
+  retention_years: null       # Data retention period
+  backup_verified: false
+  notes: ""
+
+# ============================================================================
+# TIMELINE - Project milestones and deadlines
+# ============================================================================
+timeline:
+  milestones:
+    - name: "Data acquisition complete"
+      target_date: null
+      actual_date: null
+      status: pending         # pending | in-progress | completed | delayed
+    - name: "Analysis complete"
+      target_date: null
+      actual_date: null
+      status: pending
+    - name: "Manuscript draft"
+      target_date: null
+      actual_date: null
+      status: pending
+  notes: ""
+
+# ============================================================================
+# ARTIFACTS - Deliverables and outputs
+# ============================================================================
+artifacts:
+  - path: ""                  # Relative path from project root
+    type: figure              # figure | table | dataset | model | report | script
+    status: draft             # draft | ready | delivered | published
+    created: 2024-01-01
+    updated: null
+    description: ""
+
+# ============================================================================
+# HUB - Cross-project registry (managed by bam:hub)
+# ============================================================================
+hub:
+  registered: false           # True when registered with ~/.ba-hub
+  registered_date: null
+  last_sync: null
