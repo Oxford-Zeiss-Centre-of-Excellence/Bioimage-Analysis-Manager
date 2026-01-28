@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
     Checkbox,
@@ -80,7 +80,7 @@ def compose_setup_tab(app: object) -> ComposeResult:
             # Data Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Data", id="setup_data"):
-                with Vertical(id="data_form"):
+                with VerticalScroll(id="data_form"):
                     with Horizontal(classes="form-row"):
                         yield Label("")
                         yield Checkbox(
@@ -161,11 +161,47 @@ def compose_setup_tab(app: object) -> ComposeResult:
                                 id="data_format",
                             )
                         with Horizontal(classes="form-row"):
-                            yield Label("Size (GB):")
+                            yield Label("Raw Size:")
                             yield Input(
                                 app._defaults.get("data_size_gb", ""),
                                 placeholder="Approximate raw data size",
                                 id="data_size_gb",
+                            )
+                            yield Select(
+                                [("GB", "gb"), ("TB", "tb")],
+                                value=app._defaults.get("data_size_unit", "gb"),
+                                id="data_size_unit",
+                            )
+
+                        with Horizontal(classes="form-row"):
+                            yield Label("Compression:")
+                            yield Checkbox(
+                                "Yes",
+                                app._defaults.get("data_compressed", False),
+                                id="data_compressed",
+                            )
+
+                        with Horizontal(
+                            classes="form-row"
+                            + (
+                                ""
+                                if app._defaults.get("data_compressed", False)
+                                else " hidden"
+                            ),
+                            id="data_uncompressed_row",
+                        ):
+                            yield Label("Uncompressed Size:")
+                            yield Input(
+                                app._defaults.get("data_uncompressed_size_gb", ""),
+                                placeholder="Uncompressed size",
+                                id="data_uncompressed_size_gb",
+                            )
+                            yield Select(
+                                [("GB", "gb"), ("TB", "tb")],
+                                value=app._defaults.get(
+                                    "data_uncompressed_size_unit", "gb"
+                                ),
+                                id="data_uncompressed_size_unit",
                             )
 
         app._init_error = Static("", id="init_error")

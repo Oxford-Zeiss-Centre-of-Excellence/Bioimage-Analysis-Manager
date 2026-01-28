@@ -38,6 +38,7 @@ from .screens import (
     DirectoryPickerScreen,
     ExitConfirmScreen,
     NewManifestConfirmScreen,
+    ResetConfirmScreen,
 )
 from .styles import APP_CSS
 from .tabs.admin import compose_admin_tab
@@ -55,6 +56,7 @@ class BAApp(App[dict[str, object] | None]):
     BINDINGS = [
         Binding("ctrl+n", "new_manifest", "New", show=True, priority=True),
         Binding("ctrl+s", "save_current", "Save", show=True, priority=True),
+        Binding("ctrl+r", "reset_manifest", "Reset", show=True, priority=True),
         Binding("ctrl+x", "exit_app", "Exit", show=True, priority=True),
         Binding("f1", "show_tab_1", "", show=False),
         Binding("f2", "show_tab_2", "", show=False),
@@ -174,6 +176,9 @@ class BAApp(App[dict[str, object] | None]):
         self._manifest_errors: Optional[Static] = None
         self._browse_target: Optional[str] = None
         self._active_path_input: Optional[str] = None
+        self._path_suggestions_visible = False
+        self._path_suggestions: Optional[OptionList] = None
+        self._ui_state_path = Path.home() / ".config" / "bam" / "ui_state.yaml"
         self._collaborator_rows: list[dict[str, str]] = []
         if self._defaults.get("collaborators"):
             self._collaborator_rows = [
@@ -211,6 +216,9 @@ class BAApp(App[dict[str, object] | None]):
             tabbed.active = self._mode
         else:
             tabbed.active = "setup"
+            # Only restore saved UI state for menu mode
+            if self._mode == "menu":
+                self._apply_ui_state()
 
         self._refresh_init_validation()
         self._refresh_sync_button_state()
@@ -241,6 +249,11 @@ class BAApp(App[dict[str, object] | None]):
             self._manifest_errors = None
 
         try:
+            self._path_suggestions = self.query_one("#path_suggestions", OptionList)
+        except Exception:
+            self._path_suggestions = None
+
+        try:
             self._ensure_collaborator_rows()
             self._populate_collaborators_table()
         except Exception:
@@ -257,6 +270,81 @@ class BAApp(App[dict[str, object] | None]):
         # Notify if existing manifest was loaded
         if self._defaults.get("project_name"):
             self.notify("Manifest loaded", severity="information")
+
+    def on_shutdown(self) -> None:
+        self._store_ui_state()
+
+    def on_unmount(self) -> None:
+        self._store_ui_state()
+
+    def _get_project_state_key(self) -> str:
+        """Return a unique key for this project's UI state."""
+        return str(self._project_root.resolve())
+
+    def _apply_ui_state(self) -> None:
+        try:
+            if not self._ui_state_path.exists():
+                return
+            with open(self._ui_state_path) as f:
+                all_state = yaml.safe_load(f) or {}
+        except Exception:
+            return
+
+        # Get project-specific state
+        project_key = self._get_project_state_key()
+        data = all_state.get(project_key, {})
+        if not data:
+            return
+
+        tab_id = data.get("active_tab")
+        focus_id = data.get("focused_id")
+
+        if tab_id:
+            try:
+                tabbed = self.query_one("#tabs", TabbedContent)
+                tabbed.active = str(tab_id)
+            except Exception:
+                pass
+
+        if focus_id:
+
+            def _focus_later() -> None:
+                try:
+                    widget = self.query_one(f"#{focus_id}")
+                    widget.focus()
+                except Exception:
+                    pass
+
+            # Use set_timer with small delay to ensure tab content is ready
+            self.set_timer(0.1, _focus_later)
+
+    def _store_ui_state(self) -> None:
+        try:
+            tabbed = self.query_one("#tabs", TabbedContent)
+            active_tab = tabbed.active
+        except Exception:
+            active_tab = ""
+
+        focused_id = ""
+        if self.focused is not None and getattr(self.focused, "id", None):
+            focused_id = str(self.focused.id)
+
+        project_key = self._get_project_state_key()
+        project_state = {"active_tab": active_tab, "focused_id": focused_id}
+
+        try:
+            self._ui_state_path.parent.mkdir(parents=True, exist_ok=True)
+            # Load existing state for all projects
+            all_state = {}
+            if self._ui_state_path.exists():
+                with open(self._ui_state_path) as f:
+                    all_state = yaml.safe_load(f) or {}
+            # Update state for this project
+            all_state[project_key] = project_state
+            with open(self._ui_state_path, "w") as f:
+                yaml.safe_dump(all_state, f, sort_keys=False)
+        except Exception:
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -300,19 +388,64 @@ class BAApp(App[dict[str, object] | None]):
             self._hide_path_suggestions()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id in ("project_name", "analyst", "data_source", "data_local"):
+        if event.input.id in (
+            "project_name",
+            "analyst",
+            "data_source",
+            "data_local",
+            "data_size_gb",
+            "data_uncompressed_size_gb",
+        ):
             self._refresh_init_validation()
             self._refresh_sync_button_state()
         # Show path suggestions for path fields when locally mounted
         if event.input.id in ("data_source", "data_local"):
             try:
                 checkbox = self.query_one("#locally_mounted", Checkbox)
-                if checkbox.value:
+                focused = self.focused
+                if (
+                    checkbox.value
+                    and focused is event.input
+                    and event.input.id in ("data_source", "data_local")
+                ):
                     self._update_path_suggestions(event.input.id, event.value)
                 else:
                     self._hide_path_suggestions()
             except Exception:
                 pass
+
+        if event.input.id == "data_size_gb":
+            cleaned = "".join(ch for ch in event.value if ch.isdigit() or ch == ".")
+            if cleaned != event.value:
+                event.input.value = cleaned
+        elif event.input.id == "data_uncompressed_size_gb":
+            cleaned = "".join(ch for ch in event.value if ch.isdigit() or ch == ".")
+            if cleaned != event.value:
+                event.input.value = cleaned
+
+    def on_input_focused(self, event) -> None:
+        input_id = getattr(event.input, "id", "")
+        if input_id in ("data_source", "data_local"):
+            try:
+                checkbox = self.query_one("#locally_mounted", Checkbox)
+                if checkbox.value:
+                    self._update_path_suggestions(input_id, event.input.value)
+                else:
+                    self._hide_path_suggestions()
+            except Exception:
+                pass
+        else:
+            self._hide_path_suggestions()
+
+    def on_input_blurred(self, event) -> None:
+        input_id = getattr(event.input, "id", "")
+        if input_id in ("data_source", "data_local"):
+            focused = self.focused
+            if self._path_suggestions and focused is self._path_suggestions:
+                return
+            if focused and getattr(focused, "id", "") == "path_suggestions":
+                return
+            self._hide_path_suggestions()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "data_endpoint":
@@ -332,6 +465,15 @@ class BAApp(App[dict[str, object] | None]):
             self._refresh_sync_button_state()
             if not event.value:
                 self._hide_path_suggestions()
+        elif event.checkbox.id == "data_compressed":
+            try:
+                row = self.query_one("#data_uncompressed_row", Horizontal)
+                if event.value:
+                    row.remove_class("hidden")
+                else:
+                    row.add_class("hidden")
+            except Exception:
+                pass
         elif event.checkbox.id == "data_enabled":
             self._toggle_data_sections(event.value)
 
@@ -367,12 +509,24 @@ class BAApp(App[dict[str, object] | None]):
             if self._active_path_input:
                 try:
                     input_widget = self.query_one(f"#{self._active_path_input}", Input)
-                    input_widget.value = str(event.option.prompt)
+                    selected = str(event.option.prompt)
+                    input_widget.value = selected
                     self._hide_path_suggestions()
                     self._refresh_init_validation()
                     self._refresh_sync_button_state()
                     # Return focus to input for continued typing
                     input_widget.focus()
+
+                    def _move_cursor() -> None:
+                        try:
+                            input_widget.cursor_position = len(selected)
+                        except Exception:
+                            pass
+
+                    try:
+                        self.call_later(_move_cursor)
+                    except Exception:
+                        _move_cursor()
                 except Exception:
                     pass
 
@@ -394,7 +548,11 @@ class BAApp(App[dict[str, object] | None]):
 
         # Handle path suggestions keyboard navigation
         try:
-            suggestions = self.query_one("#path_suggestions", OptionList)
+            if not self._path_suggestions_visible:
+                return
+            suggestions = self._path_suggestions or self.query_one(
+                "#path_suggestions", OptionList
+            )
             if suggestions.has_class("visible"):
                 # Escape: hide suggestions and return focus to input
                 if event.key == "escape":
@@ -459,6 +617,147 @@ class BAApp(App[dict[str, object] | None]):
     def action_new_manifest(self) -> None:
         """Create a new blank manifest."""
         self.push_screen(NewManifestConfirmScreen(), self._handle_new_manifest_confirm)
+
+    def action_reset_manifest(self) -> None:
+        """Show confirmation dialog before reloading manifest from disk."""
+        self.push_screen(ResetConfirmScreen(), self._handle_reset_confirm)
+
+    def _handle_reset_confirm(self, result: str | None) -> None:
+        """Handle the confirmation result from ResetConfirmScreen."""
+        if result == "reset":
+            self._do_reset_manifest()
+
+    def _do_reset_manifest(self) -> None:
+        """Reload manifest from disk, discarding unsaved changes."""
+        from .io import load_manifest
+
+        manifest_path = self._project_root / "manifest.yaml"
+        manifest = load_manifest(manifest_path)
+        if manifest is None:
+            self.notify("No manifest.yaml found to reload", severity="warning")
+            return
+
+        self._manifest = manifest
+        self._reload_form_from_manifest(manifest)
+        self._load_manifest_sections()
+        self.notify("Manifest reloaded from disk", severity="information")
+
+    def _reload_form_from_manifest(self, manifest: Manifest) -> None:
+        """Reload all form fields from manifest data."""
+        # Project fields
+        try:
+            self.query_one("#project_name", Input).value = manifest.project.name
+        except Exception:
+            pass
+        try:
+            if manifest.project.status:
+                self.query_one("#project_status", Select).value = manifest.project.status
+        except Exception:
+            pass
+
+        # People fields
+        try:
+            if manifest.people:
+                self.query_one("#analyst", Input).value = manifest.people.analyst or ""
+        except Exception:
+            pass
+
+        # Collaborators
+        try:
+            if manifest.people and manifest.people.collaborators:
+                self._collaborator_rows = [
+                    {
+                        "name": c.name,
+                        "role": c.role or "",
+                        "email": c.email or "",
+                        "affiliation": c.affiliation or "",
+                    }
+                    for c in manifest.people.collaborators
+                ]
+            else:
+                self._collaborator_rows = []
+            self._populate_collaborators_table()
+        except Exception:
+            pass
+
+        # Tags
+        try:
+            if manifest.tags:
+                self.query_one("#project_tags", Input).value = ", ".join(manifest.tags)
+            else:
+                self.query_one("#project_tags", Input).value = ""
+        except Exception:
+            pass
+
+        # Data fields
+        try:
+            if manifest.data:
+                self.query_one("#data_enabled", Checkbox).value = manifest.data.enabled
+                self._toggle_data_sections(manifest.data.enabled)
+                if manifest.data.endpoint:
+                    self.query_one("#data_endpoint", Select).value = manifest.data.endpoint
+                self.query_one("#data_source", Input).value = str(manifest.data.source or "")
+                self.query_one("#data_local", Input).value = str(manifest.data.local or "")
+                self.query_one("#locally_mounted", Checkbox).value = manifest.data.locally_mounted
+                if manifest.data.format:
+                    self.query_one("#data_format", Select).value = manifest.data.format
+                self.query_one("#data_description", Input).value = manifest.data.description or ""
+                if manifest.data.raw_size_gb is not None:
+                    self.query_one("#data_size_gb", Input).value = str(manifest.data.raw_size_gb)
+                if manifest.data.raw_size_unit:
+                    self.query_one("#data_size_unit", Select).value = manifest.data.raw_size_unit
+                self.query_one("#data_compressed", Checkbox).value = manifest.data.compressed or False
+                if manifest.data.uncompressed_size_gb is not None:
+                    self.query_one("#data_uncompressed_size_gb", Input).value = str(manifest.data.uncompressed_size_gb)
+                if manifest.data.uncompressed_size_unit:
+                    self.query_one("#data_uncompressed_size_unit", Select).value = manifest.data.uncompressed_size_unit
+        except Exception:
+            pass
+
+        # Acquisition fields
+        try:
+            if manifest.acquisition:
+                self.query_one("#microscope", Input).value = manifest.acquisition.microscope or ""
+                if manifest.acquisition.modality:
+                    self.query_one("#modality", Select).value = manifest.acquisition.modality
+                self.query_one("#objective", Input).value = manifest.acquisition.objective or ""
+                if manifest.acquisition.channels:
+                    self.query_one("#channels_text", TextArea).text = "\n".join(
+                        ch.name for ch in manifest.acquisition.channels
+                    )
+                if manifest.acquisition.voxel_size:
+                    vs = manifest.acquisition.voxel_size
+                    if vs.x_um is not None:
+                        self.query_one("#voxel_x", Input).value = str(vs.x_um)
+                    if vs.y_um is not None:
+                        self.query_one("#voxel_y", Input).value = str(vs.y_um)
+                    if vs.z_um is not None:
+                        self.query_one("#voxel_z", Input).value = str(vs.z_um)
+                if manifest.acquisition.time_interval_s is not None:
+                    self.query_one("#time_interval", Input).value = str(manifest.acquisition.time_interval_s)
+                self.query_one("#acquisition_notes", TextArea).text = manifest.acquisition.notes or ""
+        except Exception:
+            pass
+
+        # Tools fields
+        try:
+            if manifest.tools:
+                if manifest.tools.environment:
+                    self.query_one("#environment", Select).value = manifest.tools.environment
+                self.query_one("#env_file", Input).value = manifest.tools.env_file or ""
+                if manifest.tools.languages:
+                    self.query_one("#languages", Input).value = ", ".join(manifest.tools.languages)
+                if manifest.tools.key_packages:
+                    self.query_one("#packages_text", TextArea).text = "\n".join(
+                        pkg.name for pkg in manifest.tools.key_packages
+                    )
+                self.query_one("#scripts_dir", Input).value = manifest.tools.scripts_dir or ""
+        except Exception:
+            pass
+
+        # Refresh validation states
+        self._refresh_init_validation()
+        self._refresh_sync_button_state()
 
     def _handle_new_manifest_confirm(self, result: str | None) -> None:
         """Handle the confirmation result from NewManifestConfirmScreen."""
@@ -595,6 +894,38 @@ class BAApp(App[dict[str, object] | None]):
             data_format = str(values.get("data_format", "")).strip()
             if data_format:
                 manifest_data["data"]["format"] = data_format
+
+            data_description = str(values.get("data_description", "")).strip()
+            if data_description:
+                manifest_data["data"]["description"] = data_description
+
+            data_size = str(values.get("data_size_gb", "")).strip()
+            if data_size:
+                try:
+                    value = float(data_size)
+                    unit = str(values.get("data_size_unit", "gb")).lower()
+                    if unit == "tb":
+                        value *= 1024.0
+                    manifest_data["data"]["raw_size_gb"] = value
+                    manifest_data["data"]["raw_size_unit"] = unit
+                except ValueError:
+                    pass
+
+            manifest_data["data"]["compressed"] = bool(
+                values.get("data_compressed", False)
+            )
+
+            uncompressed_size = str(values.get("data_uncompressed_size_gb", "")).strip()
+            if uncompressed_size:
+                try:
+                    value = float(uncompressed_size)
+                    unit = str(values.get("data_uncompressed_size_unit", "gb")).lower()
+                    if unit == "tb":
+                        value *= 1024.0
+                    manifest_data["data"]["uncompressed_size_gb"] = value
+                    manifest_data["data"]["uncompressed_size_unit"] = unit
+                except ValueError:
+                    pass
 
             # Collect acquisition data from Science tab
             try:
@@ -774,6 +1105,8 @@ class BAApp(App[dict[str, object] | None]):
 
     def _handle_exit_confirm(self, result: str | None) -> None:
         if result == "save":
+            # Save UI state before exiting
+            self._store_ui_state()
             tabbed = self.query_one("#tabs", TabbedContent)
             if tabbed.active == "init":
                 self._submit_init()
@@ -791,6 +1124,8 @@ class BAApp(App[dict[str, object] | None]):
                 # Unknown tab, just exit
                 self.exit(None)
         elif result == "discard":
+            # Save UI state before exiting
+            self._store_ui_state()
             self.exit(None)
         # "cancel" does nothing, just closes the modal
 
@@ -944,6 +1279,42 @@ class BAApp(App[dict[str, object] | None]):
         endpoint_select = self.query_one("#data_endpoint", Select)
         locally_mounted = self.query_one("#locally_mounted", Checkbox)
         format_select = self.query_one("#data_format", Select)
+        data_description = ""
+        data_size = ""
+        data_size_unit = "gb"
+        data_compressed = False
+        data_uncompressed_size = ""
+        data_uncompressed_unit = "gb"
+        try:
+            data_description = self.query_one("#data_description", Input).value
+        except Exception:
+            pass
+        try:
+            data_size = self.query_one("#data_size_gb", Input).value
+        except Exception:
+            pass
+        try:
+            unit_value = self.query_one("#data_size_unit", Select).value
+            if unit_value and unit_value != Select.BLANK:
+                data_size_unit = str(unit_value)
+        except Exception:
+            pass
+        try:
+            data_compressed = bool(self.query_one("#data_compressed", Checkbox).value)
+        except Exception:
+            pass
+        try:
+            data_uncompressed_size = self.query_one(
+                "#data_uncompressed_size_gb", Input
+            ).value
+        except Exception:
+            pass
+        try:
+            unit_value = self.query_one("#data_uncompressed_size_unit", Select).value
+            if unit_value and unit_value != Select.BLANK:
+                data_uncompressed_unit = str(unit_value)
+        except Exception:
+            pass
         return {
             "project_name": self.query_one("#project_name", Input).value,
             "analyst": self.query_one("#analyst", Input).value,
@@ -957,6 +1328,12 @@ class BAApp(App[dict[str, object] | None]):
             if format_select.value is not Select.BLANK
             else "",
             "locally_mounted": locally_mounted.value,
+            "data_description": data_description,
+            "data_size_gb": data_size,
+            "data_size_unit": data_size_unit,
+            "data_compressed": data_compressed,
+            "data_uncompressed_size_gb": data_uncompressed_size,
+            "data_uncompressed_size_unit": data_uncompressed_unit,
         }
 
     def _refresh_init_validation(self) -> None:
@@ -1029,7 +1406,9 @@ class BAApp(App[dict[str, object] | None]):
     def _update_path_suggestions(self, input_id: str, current_value: str) -> None:
         """Update path suggestions dropdown based on current input."""
         try:
-            suggestions = self.query_one("#path_suggestions", OptionList)
+            suggestions = self._path_suggestions or self.query_one(
+                "#path_suggestions", OptionList
+            )
             suggestions.clear_options()
 
             if not current_value:
@@ -1068,6 +1447,7 @@ class BAApp(App[dict[str, object] | None]):
                 for entry in entries:
                     suggestions.add_option(Option(entry))
                 suggestions.add_class("visible")
+                self._path_suggestions_visible = True
                 self._active_path_input = input_id
                 # Don't auto-focus - user presses Down arrow to navigate to suggestions
             else:
@@ -1078,10 +1458,13 @@ class BAApp(App[dict[str, object] | None]):
     def _hide_path_suggestions(self) -> None:
         """Hide the path suggestions dropdown."""
         try:
-            suggestions = self.query_one("#path_suggestions", OptionList)
+            suggestions = self._path_suggestions or self.query_one(
+                "#path_suggestions", OptionList
+            )
             suggestions.remove_class("visible")
             suggestions.clear_options()
             self._active_path_input = None
+            self._path_suggestions_visible = False
         except Exception:
             pass
 
@@ -1279,6 +1662,7 @@ class BAApp(App[dict[str, object] | None]):
             self.notify("Please fill in required fields", severity="error")
             return
         self.notify("Saving manifest...", severity="information")
+        self._store_ui_state()
         self.exit({"action": "init", "data": values})
 
     def _submit_log(self) -> None:
@@ -1286,6 +1670,7 @@ class BAApp(App[dict[str, object] | None]):
             if self._log_error is not None:
                 self._log_error.update("Logging is disabled in init-only mode.")
             return
+        self._store_ui_state()
         self.exit({"action": "log", "entries": self._worklog_entries})
 
     def _set_tab(self, tab_id: str) -> None:
@@ -1414,6 +1799,7 @@ class BAApp(App[dict[str, object] | None]):
         if not title:
             self.notify("Idea title is required", severity="error")
             return
+        self._store_ui_state()
         self.exit(
             {
                 "action": "idea",
@@ -1463,6 +1849,7 @@ class BAApp(App[dict[str, object] | None]):
         self._refresh_artifact_list()
 
     def _submit_artifact(self) -> None:
+        self._store_ui_state()
         self.exit(
             {
                 "action": "artifact",
@@ -1533,4 +1920,5 @@ class BAApp(App[dict[str, object] | None]):
                 self._manifest_errors.update(f"Validation error: {exc}")
             return
 
+        self._store_ui_state()
         self.exit({"action": "manifest", "manifest": manifest})

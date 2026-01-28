@@ -35,7 +35,7 @@ NewManifestConfirmScreen {
 }
 
 #dialog {
-    width: auto;
+    width: 50;
     height: auto;
     border: thick $primary;
     background: $surface;
@@ -43,13 +43,43 @@ NewManifestConfirmScreen {
 }
 
 #dialog Static {
-    width: auto;
-    content-align: center middle;
+    width: 100%;
+    text-align: center;
     margin-bottom: 1;
 }
 
 #dialog #button_row {
-    width: auto;
+    width: 100%;
+    height: auto;
+    align: center middle;
+}
+
+#dialog Button {
+    margin: 0 1;
+}
+"""
+
+RESET_CONFIRM_CSS = """
+ResetConfirmScreen {
+    align: center middle;
+}
+
+#dialog {
+    width: 50;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog Static {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#dialog #button_row {
+    width: 100%;
     height: auto;
     align: center middle;
 }
@@ -263,6 +293,10 @@ TextArea.invalid {
 }
 
 #data_sections.hidden {
+    display: none;
+}
+
+.hidden {
     display: none;
 }
 

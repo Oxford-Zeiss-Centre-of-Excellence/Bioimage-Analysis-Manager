@@ -13,6 +13,7 @@ from .styles import (
     DIRECTORY_PICKER_CSS,
     EXIT_CONFIRM_CSS,
     NEW_MANIFEST_CONFIRM_CSS,
+    RESET_CONFIRM_CSS,
 )
 
 
@@ -74,6 +75,35 @@ class NewManifestConfirmScreen(ModalScreen[str]):
     def action_select_discard(self) -> None:
         """Handle D key press."""
         self.dismiss("discard")
+
+    def action_select_cancel(self) -> None:
+        """Handle C key press."""
+        self.dismiss("cancel")
+
+
+class ResetConfirmScreen(ModalScreen[str]):
+    """Modal screen to confirm resetting/reloading manifest from disk."""
+
+    BINDINGS = [
+        Binding("r", "select_reset", "Reset", show=True),
+        Binding("c", "select_cancel", "Cancel", show=True),
+    ]
+
+    CSS = RESET_CONFIRM_CSS
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static("Discard unsaved changes and reload manifest?")
+            with Horizontal(id="button_row"):
+                yield Button("Reset (R)", id="reset", variant="error")
+                yield Button("Cancel (C)", id="cancel", variant="default")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id)
+
+    def action_select_reset(self) -> None:
+        """Handle R key press."""
+        self.dismiss("reset")
 
     def action_select_cancel(self) -> None:
         """Handle C key press."""

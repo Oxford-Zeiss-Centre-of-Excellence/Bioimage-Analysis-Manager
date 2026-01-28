@@ -3,6 +3,7 @@ AGENTS.md
 
 .pixi
 __pycache__
+.ruff_cache/
 
 .claude/
 .vscode/

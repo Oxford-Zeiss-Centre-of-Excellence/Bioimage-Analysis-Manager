@@ -238,6 +238,10 @@ class DataConfig(BaseModel):
     description: Optional[str] = None
     format: Optional[str] = None
     raw_size_gb: Optional[float] = None
+    raw_size_unit: Optional[str] = None
+    compressed: Optional[bool] = None
+    uncompressed_size_gb: Optional[float] = None
+    uncompressed_size_unit: Optional[str] = None
 
 
 class Artifact(BaseModel):

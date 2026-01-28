@@ -68,6 +68,10 @@ def run_init(args: argparse.Namespace) -> int:
             defaults["data_source"] = str(existing_manifest.data.source or "")
             defaults["data_local"] = str(existing_manifest.data.local or "")
             defaults["locally_mounted"] = existing_manifest.data.locally_mounted
+            if existing_manifest.data.description:
+                defaults["data_description"] = existing_manifest.data.description
+            if existing_manifest.data.raw_size_gb is not None:
+                defaults["data_size_gb"] = str(existing_manifest.data.raw_size_gb)
     app = BAApp(
         mode="init",
         recent_entries=[],
@@ -384,6 +388,26 @@ def run_menu(args: argparse.Namespace) -> int:
         }
         if manifest.data and manifest.data.format:
             defaults["data_format"] = manifest.data.format
+        if manifest.data and manifest.data.description:
+            defaults["data_description"] = manifest.data.description
+        if manifest.data and manifest.data.raw_size_gb is not None:
+            defaults["data_size_gb"] = str(manifest.data.raw_size_gb)
+        if manifest.data and manifest.data.raw_size_unit:
+            defaults["data_size_unit"] = manifest.data.raw_size_unit
+        if manifest.data and manifest.data.compressed is not None:
+            defaults["data_compressed"] = manifest.data.compressed
+        if manifest.data and manifest.data.uncompressed_size_gb is not None:
+            defaults["data_uncompressed_size_gb"] = str(
+                manifest.data.uncompressed_size_gb
+            )
+        if manifest.data and manifest.data.uncompressed_size_unit:
+            defaults["data_uncompressed_size_unit"] = (
+                manifest.data.uncompressed_size_unit
+            )
+        if manifest.data and manifest.data.description:
+            defaults["data_description"] = manifest.data.description
+        if manifest.data and manifest.data.raw_size_gb is not None:
+            defaults["data_size_gb"] = str(manifest.data.raw_size_gb)
 
         # Add tags
         if manifest.tags:
