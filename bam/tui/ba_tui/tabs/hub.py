@@ -1,8 +1,9 @@
 """Hub tab: cross-project registry settings."""
+
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import (
     Button,
     Checkbox,
@@ -16,7 +17,7 @@ from textual.widgets import (
 def compose_hub_tab(app: object) -> ComposeResult:
     """Compose the Hub tab with registry settings."""
     with TabPane("Hub (F5)", id="hub"):
-        with Vertical(id="hub_form"):
+        with VerticalScroll(id="hub_form"):
             yield Static("Cross-Project Registry", classes="section-header")
             yield Static(
                 "The hub registers this project with ~/.ba-hub for cross-project queries.",

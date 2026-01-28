@@ -1,8 +1,9 @@
 """Admin tab: billing, timeline."""
+
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import (
     Input,
     Label,
@@ -21,7 +22,7 @@ def compose_admin_tab(app: object) -> ComposeResult:
             # Billing Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Billing", id="admin_billing"):
-                with Vertical(id="billing_form"):
+                with VerticalScroll(id="billing_form"):
                     yield Static("Funding", classes="section-header")
                     with Horizontal(classes="form-row"):
                         yield Label("Fund code:")
@@ -81,8 +82,10 @@ def compose_admin_tab(app: object) -> ComposeResult:
             # Timeline Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Timeline", id="admin_timeline"):
-                with Vertical(id="timeline_form"):
-                    yield Static("Milestones (one per line: name | target_date | actual_date | status)")
+                with VerticalScroll(id="timeline_form"):
+                    yield Static(
+                        "Milestones (one per line: name | target_date | actual_date | status)"
+                    )
                     yield TextArea(
                         app._defaults.get("milestones_text", ""),
                         id="milestones_text",

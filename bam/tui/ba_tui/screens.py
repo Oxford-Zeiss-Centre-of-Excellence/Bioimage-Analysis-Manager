@@ -6,12 +6,23 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, DirectoryTree, Input, Label, Select, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DirectoryTree,
+    Input,
+    Label,
+    Select,
+    Static,
+)
 
 from .styles import (
+    CHANNEL_MODAL_CSS,
     COLLABORATOR_MODAL_CSS,
+    CUSTOM_INPUT_MODAL_CSS,
     DIRECTORY_PICKER_CSS,
     EXIT_CONFIRM_CSS,
+    HARDWARE_MODAL_CSS,
     NEW_MANIFEST_CONFIRM_CSS,
     RESET_CONFIRM_CSS,
 )
@@ -179,6 +190,20 @@ class CollaboratorModal(ModalScreen[dict[str, str] | None]):
 
     def compose(self) -> ComposeResult:
         title = "Edit Collaborator" if self.initial_data else "Add Collaborator"
+        option_values = {value for _, value in self.role_options}
+        initial_role = str(self.initial_data.get("role", "")).strip()
+        custom_role = ""
+        role_value = Select.BLANK
+        show_custom = False
+
+        if initial_role:
+            if initial_role in option_values:
+                role_value = initial_role
+                show_custom = initial_role.lower() == "other"
+            else:
+                role_value = "Other" if "Other" in option_values else Select.BLANK
+                custom_role = initial_role
+                show_custom = True
         with Vertical(id="dialog"):
             yield Static(title, classes="header")
 
@@ -190,13 +215,19 @@ class CollaboratorModal(ModalScreen[dict[str, str] | None]):
 
             with Horizontal(classes="form-row"):
                 yield Label("Role:")
-                role_value = self.initial_data.get("role") or Select.BLANK
                 yield Select(
                     self.role_options,
                     value=role_value,
                     allow_blank=True,
                     id="role",
                 )
+
+            with Horizontal(
+                id="role_custom_row",
+                classes="form-row" + ("" if show_custom else " hidden"),
+            ):
+                yield Label("Custom role:")
+                yield Input(custom_role, id="role_custom", placeholder="Enter role")
 
             with Horizontal(classes="form-row"):
                 yield Label("Email:")
@@ -210,6 +241,259 @@ class CollaboratorModal(ModalScreen[dict[str, str] | None]):
                     self.initial_data.get("affiliation", ""),
                     id="affiliation",
                     placeholder="Affiliation",
+                )
+
+            with Horizontal(id="buttons"):
+                yield Button("Save (Ctrl+A)", variant="success", id="save")
+                yield Button("Cancel (Esc)", variant="error", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id != "role":
+            return
+        try:
+            row = self.query_one("#role_custom_row", Horizontal)
+            value = event.value
+            if value and str(value).lower() == "other":
+                row.remove_class("hidden")
+            else:
+                row.add_class("hidden")
+        except Exception:
+            pass
+
+    def action_save(self) -> None:
+        self._submit()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def on_key(self, event) -> None:
+        if event.key == "ctrl+a":
+            self.action_save()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "escape":
+            self.action_cancel()
+            event.prevent_default()
+            event.stop()
+
+    def _submit(self) -> None:
+        name = self.query_one("#name", Input).value.strip()
+        if not name:
+            self.notify("Name is required", severity="error")
+            return
+
+        selected_role = self.query_one("#role", Select).value
+        custom_role = self.query_one("#role_custom", Input).value.strip()
+        role_value = ""
+        if selected_role and selected_role != Select.BLANK:
+            role_value = str(selected_role)
+        if role_value.lower() == "other" and custom_role:
+            role_value = custom_role
+        elif not role_value and custom_role:
+            role_value = custom_role
+
+        data = {
+            "name": name,
+            "role": role_value,
+            "email": self.query_one("#email", Input).value.strip(),
+            "affiliation": self.query_one("#affiliation", Input).value.strip(),
+        }
+        self.dismiss(data)
+
+
+class ChannelModal(ModalScreen[dict[str, str] | None]):
+    """Modal to add or edit an imaging channel."""
+
+    BINDINGS = [
+        Binding("ctrl+a", "save", "Save", show=True, priority=True),
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
+    ]
+
+    CSS = CHANNEL_MODAL_CSS
+
+    def __init__(
+        self,
+        initial_data: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__()
+        self.initial_data = initial_data or {}
+
+    def compose(self) -> ComposeResult:
+        title = "Edit Channel" if self.initial_data else "Add Channel"
+        with Vertical(id="dialog"):
+            yield Static(title, classes="header")
+
+            with Horizontal(classes="form-row"):
+                yield Label("Name*:")
+                yield Input(
+                    self.initial_data.get("name", ""),
+                    id="name",
+                    placeholder="e.g., DAPI, GFP",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Fluorophore:")
+                yield Input(
+                    self.initial_data.get("fluorophore", ""),
+                    id="fluorophore",
+                    placeholder="e.g., DAPI, Alexa488",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Excitation (nm):")
+                yield Input(
+                    self.initial_data.get("excitation_nm", ""),
+                    id="excitation_nm",
+                    placeholder="e.g., 405",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Emission (nm):")
+                yield Input(
+                    self.initial_data.get("emission_nm", ""),
+                    id="emission_nm",
+                    placeholder="e.g., 461",
+                )
+
+            with Horizontal(id="buttons"):
+                yield Button("Save (Ctrl+A)", variant="success", id="save")
+                yield Button("Cancel (Esc)", variant="error", id="cancel")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def action_save(self) -> None:
+        self._submit()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def on_key(self, event) -> None:
+        if event.key == "ctrl+a":
+            self.action_save()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "escape":
+            self.action_cancel()
+            event.prevent_default()
+            event.stop()
+
+    def _submit(self) -> None:
+        name = self.query_one("#name", Input).value.strip()
+        if not name:
+            self.notify("Channel name is required", severity="error")
+            return
+
+        data = {
+            "name": name,
+            "fluorophore": self.query_one("#fluorophore", Input).value.strip(),
+            "excitation_nm": self.query_one("#excitation_nm", Input).value.strip(),
+            "emission_nm": self.query_one("#emission_nm", Input).value.strip(),
+        }
+        self.dismiss(data)
+
+
+class HardwareModal(ModalScreen[dict[str, str | bool] | None]):
+    """Modal to add or edit a hardware profile."""
+
+    BINDINGS = [
+        Binding("ctrl+a", "save", "Save", show=True, priority=True),
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
+    ]
+
+    CSS = HARDWARE_MODAL_CSS
+
+    def __init__(
+        self,
+        initial_data: dict[str, str | bool] | None = None,
+    ) -> None:
+        super().__init__()
+        self.initial_data = initial_data or {}
+
+    def compose(self) -> ComposeResult:
+        title = "Edit Hardware" if self.initial_data else "Add Hardware"
+        with Vertical(id="dialog"):
+            yield Static(title, classes="header")
+
+            with Horizontal(classes="form-row"):
+                yield Label("Name*:")
+                yield Input(
+                    str(self.initial_data.get("name", "")),
+                    id="name",
+                    placeholder="e.g., local, cluster-gpu",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("CPU:")
+                yield Input(
+                    str(self.initial_data.get("cpu", "")),
+                    id="cpu",
+                    placeholder="e.g., Intel i9, AMD EPYC",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Cores:")
+                yield Input(
+                    str(self.initial_data.get("cores", "")),
+                    id="cores",
+                    placeholder="e.g., 16",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("RAM:")
+                yield Input(
+                    str(self.initial_data.get("ram", "")),
+                    id="ram",
+                    placeholder="e.g., 64 GB",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("GPU:")
+                yield Input(
+                    str(self.initial_data.get("gpu", "")),
+                    id="gpu",
+                    placeholder="e.g., RTX 4090",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Notes:")
+                yield Input(
+                    str(self.initial_data.get("notes", "")),
+                    id="notes",
+                    placeholder="Optional",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Cluster:")
+                yield Checkbox(
+                    "Yes",
+                    bool(self.initial_data.get("is_cluster", False)),
+                    id="is_cluster",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Partition:")
+                yield Input(
+                    str(self.initial_data.get("partition", "")),
+                    id="partition",
+                    placeholder="e.g., gpu, long",
+                )
+
+            with Horizontal(classes="form-row"):
+                yield Label("Node type:")
+                yield Input(
+                    str(self.initial_data.get("node_type", "")),
+                    id="node_type",
+                    placeholder="e.g., a100, cpu",
                 )
 
             with Horizontal(id="buttons"):
@@ -246,8 +530,75 @@ class CollaboratorModal(ModalScreen[dict[str, str] | None]):
 
         data = {
             "name": name,
-            "role": str(self.query_one("#role", Select).value or ""),
-            "email": self.query_one("#email", Input).value.strip(),
-            "affiliation": self.query_one("#affiliation", Input).value.strip(),
+            "cpu": self.query_one("#cpu", Input).value.strip(),
+            "cores": self.query_one("#cores", Input).value.strip(),
+            "ram": self.query_one("#ram", Input).value.strip(),
+            "gpu": self.query_one("#gpu", Input).value.strip(),
+            "notes": self.query_one("#notes", Input).value.strip(),
+            "is_cluster": bool(self.query_one("#is_cluster", Checkbox).value),
+            "partition": self.query_one("#partition", Input).value.strip(),
+            "node_type": self.query_one("#node_type", Input).value.strip(),
         }
         self.dismiss(data)
+
+
+class CustomInputModal(ModalScreen[list[str] | None]):
+    """Modal to enter comma-separated values."""
+
+    BINDINGS = [
+        Binding("ctrl+a", "save", "Save", show=True, priority=True),
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
+    ]
+
+    CSS = CUSTOM_INPUT_MODAL_CSS
+
+    def __init__(self, title: str, placeholder: str = "") -> None:
+        super().__init__()
+        self.title = title
+        self.placeholder = placeholder
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static(self.title, classes="header")
+            with Horizontal(classes="form-row"):
+                yield Input(
+                    "",
+                    id="custom_input",
+                    placeholder=self.placeholder or "Comma-separated",
+                )
+            with Horizontal(id="buttons"):
+                yield Button("Add (Ctrl+A)", variant="success", id="save")
+                yield Button("Cancel (Esc)", variant="error", id="cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#custom_input", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def action_save(self) -> None:
+        self._submit()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def on_key(self, event) -> None:
+        if event.key == "ctrl+a":
+            self.action_save()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "escape":
+            self.action_cancel()
+            event.prevent_default()
+            event.stop()
+
+    def _submit(self) -> None:
+        text = self.query_one("#custom_input", Input).value.strip()
+        if not text:
+            self.dismiss(None)
+            return
+        items = [item.strip() for item in text.split(",") if item.strip()]
+        self.dismiss(items)

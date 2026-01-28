@@ -164,6 +164,193 @@ CollaboratorModal {
 }
 """
 
+CHANNEL_MODAL_CSS = """
+ChannelModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 60;
+    height: 22;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 0;
+    align: right middle;
+}
+
+#dialog Label {
+    width: 18;
+    text-align: right;
+    padding-right: 1;
+}
+
+#dialog Input {
+    width: 1fr;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
+
+
+HARDWARE_MODAL_CSS = """
+HardwareModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 70;
+    height: 34;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 0;
+    align: right middle;
+}
+
+#dialog Label {
+    width: 16;
+    text-align: right;
+    padding-right: 1;
+}
+
+#dialog Input {
+    width: 1fr;
+}
+
+#dialog Checkbox {
+    width: 1fr;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
+
+
+CUSTOM_INPUT_MODAL_CSS = """
+CustomInputModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 60;
+    height: 16;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#dialog Input {
+    width: 100%;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
+
+
+OTHER_LIST_MODAL_CSS = """
+OtherListModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 70;
+    height: 16;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 1;
+    align: right middle;
+}
+
+#dialog Label {
+    width: 16;
+    text-align: right;
+    padding-right: 1;
+}
+
+#dialog Input {
+    width: 1fr;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
 
 APP_CSS = """
 #form {
@@ -210,9 +397,55 @@ APP_CSS = """
     text-style: italic;
 }
 
+
 Button {
     min-width: 6;
+    background: transparent;
+    border: none;
+    color: $secondary;
 }
+
+Button.-primary {
+    color: $accent;
+}
+
+Button.-success {
+    color: $success;
+}
+
+Button.-warning {
+    color: $warning;
+}
+
+Button.-error {
+    color: $error;
+}
+
+Button.-default {
+    color: $text-muted;
+}
+
+SelectionList .selection--selected {
+    background: $warning;
+    color: $text;
+}
+
+SelectionList .selection--checked {
+    color: $warning;
+}
+
+SelectionList .selection--checked .selection--label {
+    color: $warning;
+}
+
+SelectionList .selection--checked .selection--checkbox {
+    color: $warning;
+}
+
+SelectionList Checkbox {
+    color: $warning;
+}
+
 
 TextArea {
     height: 5;
@@ -240,6 +473,7 @@ TextArea.valid {
 TextArea.invalid {
     border: tall $error;
 }
+
 
 #sync_row {
     height: auto;
@@ -337,5 +571,49 @@ TextArea.invalid {
 #collaborators_table {
     height: 10;
     width: 100%;
+}
+
+#channels_table {
+    height: 10;
+    width: 100%;
+}
+
+#hardware_table {
+    height: 8;
+    width: 100%;
+}
+
+#hardware_actions {
+    align: center middle;
+}
+
+#languages_actions,
+#software_actions,
+#cluster_packages_actions {
+    align: center middle;
+}
+
+#languages_list,
+#software_list,
+#cluster_packages_list {
+    height: 8;
+}
+
+#method_preview {
+    height: 1fr;
+    border: solid $primary;
+    padding: 1;
+}
+
+#method_path_suggestions {
+    height: 6;
+    width: 100%;
+    display: none;
+    border: solid $primary;
+    margin: 0 0 0 14;
+}
+
+#method_path_suggestions.visible {
+    display: block;
 }
 """

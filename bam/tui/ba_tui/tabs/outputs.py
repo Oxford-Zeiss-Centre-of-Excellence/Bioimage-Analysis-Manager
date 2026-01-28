@@ -1,8 +1,9 @@
 """Outputs tab: quality, publication, archive, artifacts."""
+
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
     Checkbox,
@@ -26,7 +27,7 @@ def compose_outputs_tab(app: object) -> ComposeResult:
             # Quality Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Quality", id="outputs_quality"):
-                with Vertical(id="quality_form"):
+                with VerticalScroll(id="quality_form"):
                     yield Static("QC Status", classes="section-header")
                     with Horizontal(classes="form-row"):
                         yield Label("Overall status:")
@@ -41,7 +42,9 @@ def compose_outputs_tab(app: object) -> ComposeResult:
                             id="qc_status",
                         )
 
-                    yield Static("QC Checks (one per line: name | status | date | notes)")
+                    yield Static(
+                        "QC Checks (one per line: name | status | date | notes)"
+                    )
                     yield TextArea(
                         app._defaults.get("qc_checks_text", ""),
                         id="qc_checks_text",
@@ -77,7 +80,7 @@ def compose_outputs_tab(app: object) -> ComposeResult:
             # Publication Section (with Figure Tree)
             # ─────────────────────────────────────────────────────────────
             with TabPane("Publication", id="outputs_publication"):
-                with Vertical(id="publication_form"):
+                with VerticalScroll(id="publication_form"):
                     yield Static("Publication Status", classes="section-header")
                     with Horizontal(classes="form-row"):
                         yield Label("Status:")
@@ -118,7 +121,9 @@ def compose_outputs_tab(app: object) -> ComposeResult:
                     with Horizontal(classes="form-row"):
                         yield Button("Add Figure", id="fig_add_root", variant="success")
                         yield Button("Add Panel", id="fig_add_child", variant="primary")
-                        yield Button("Add Element", id="fig_add_element", variant="primary")
+                        yield Button(
+                            "Add Element", id="fig_add_element", variant="primary"
+                        )
                         yield Button("Edit", id="fig_edit", variant="default")
                         yield Button("Delete", id="fig_delete", variant="error")
 
@@ -162,7 +167,7 @@ def compose_outputs_tab(app: object) -> ComposeResult:
             # Archive Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Archive", id="outputs_archive"):
-                with Vertical(id="archive_form"):
+                with VerticalScroll(id="archive_form"):
                     yield Static("Archive Status", classes="section-header")
                     with Horizontal(classes="form-row"):
                         yield Label("Status:")
@@ -214,34 +219,44 @@ def compose_outputs_tab(app: object) -> ComposeResult:
             # Artifacts Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Artifacts", id="outputs_artifacts"):
-                with Horizontal():
-                    with Vertical():
-                        yield Static("Artifacts Registry")
-                        yield ListView(id="artifact_list")
-                    with Vertical():
-                        yield Static("Add Artifact", classes="section-header")
-                        yield Input(placeholder="Artifact path", id="artifact_path")
-                        yield Input(placeholder="Type (figure/table/dataset/model/report/script)", id="artifact_type")
-                        yield Input(placeholder="Description", id="artifact_description")
-                        yield Select(
-                            [
-                                ("Draft", "draft"),
-                                ("Ready", "ready"),
-                                ("Delivered", "delivered"),
-                                ("Published", "published"),
-                            ],
-                            id="artifact_status",
-                        )
-                        yield Button("Add Artifact", id="artifact_add", variant="success")
+                with VerticalScroll():
+                    with Horizontal():
+                        with Vertical():
+                            yield Static("Artifacts Registry")
+                            yield ListView(id="artifact_list")
+                        with Vertical():
+                            yield Static("Add Artifact", classes="section-header")
+                            yield Input(placeholder="Artifact path", id="artifact_path")
+                            yield Input(
+                                placeholder="Type (figure/table/dataset/model/report/script)",
+                                id="artifact_type",
+                            )
+                            yield Input(
+                                placeholder="Description", id="artifact_description"
+                            )
+                            yield Select(
+                                [
+                                    ("Draft", "draft"),
+                                    ("Ready", "ready"),
+                                    ("Delivered", "delivered"),
+                                    ("Published", "published"),
+                                ],
+                                id="artifact_status",
+                            )
+                            yield Button(
+                                "Add Artifact", id="artifact_add", variant="success"
+                            )
 
-                        yield Static("Update Selected", classes="section-header")
-                        yield Select(
-                            [
-                                ("Draft", "draft"),
-                                ("Ready", "ready"),
-                                ("Delivered", "delivered"),
-                                ("Published", "published"),
-                            ],
-                            id="artifact_update_status",
-                        )
-                        yield Button("Update Status", id="artifact_update", variant="primary")
+                            yield Static("Update Selected", classes="section-header")
+                            yield Select(
+                                [
+                                    ("Draft", "draft"),
+                                    ("Ready", "ready"),
+                                    ("Delivered", "delivered"),
+                                    ("Published", "published"),
+                                ],
+                                id="artifact_update_status",
+                            )
+                            yield Button(
+                                "Update Status", id="artifact_update", variant="primary"
+                            )

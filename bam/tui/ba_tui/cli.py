@@ -72,6 +72,18 @@ def run_init(args: argparse.Namespace) -> int:
                 defaults["data_description"] = existing_manifest.data.description
             if existing_manifest.data.raw_size_gb is not None:
                 defaults["data_size_gb"] = str(existing_manifest.data.raw_size_gb)
+            if existing_manifest.data.raw_size_unit:
+                defaults["data_size_unit"] = existing_manifest.data.raw_size_unit
+            if existing_manifest.data.compressed is not None:
+                defaults["data_compressed"] = existing_manifest.data.compressed
+            if existing_manifest.data.uncompressed_size_gb is not None:
+                defaults["data_uncompressed_size_gb"] = str(
+                    existing_manifest.data.uncompressed_size_gb
+                )
+            if existing_manifest.data.uncompressed_size_unit:
+                defaults["data_uncompressed_size_unit"] = (
+                    existing_manifest.data.uncompressed_size_unit
+                )
     app = BAApp(
         mode="init",
         recent_entries=[],
@@ -386,8 +398,37 @@ def run_menu(args: argparse.Namespace) -> int:
             if manifest.data
             else False,
         }
+        if manifest.data and manifest.data.endpoint:
+            endpoint_value = manifest.data.endpoint
+            known_endpoints = {
+                "Local",
+                "I Drive",
+                "MSD CEPH",
+                "RFS",
+                "HDD1",
+                "Other",
+            }
+            if endpoint_value in known_endpoints:
+                defaults["data_endpoint"] = endpoint_value
+            else:
+                defaults["data_endpoint"] = "Other"
+                defaults["data_endpoint_custom"] = endpoint_value
         if manifest.data and manifest.data.format:
-            defaults["data_format"] = manifest.data.format
+            format_value = manifest.data.format
+            known_formats = {
+                "tiff",
+                "zarr",
+                "hdf5",
+                "nd2",
+                "czi",
+                "ome-tiff",
+                "other",
+            }
+            if format_value.lower() in known_formats:
+                defaults["data_format"] = format_value
+            else:
+                defaults["data_format"] = "other"
+                defaults["data_format_custom"] = format_value
         if manifest.data and manifest.data.description:
             defaults["data_description"] = manifest.data.description
         if manifest.data and manifest.data.raw_size_gb is not None:
@@ -404,11 +445,6 @@ def run_menu(args: argparse.Namespace) -> int:
             defaults["data_uncompressed_size_unit"] = (
                 manifest.data.uncompressed_size_unit
             )
-        if manifest.data and manifest.data.description:
-            defaults["data_description"] = manifest.data.description
-        if manifest.data and manifest.data.raw_size_gb is not None:
-            defaults["data_size_gb"] = str(manifest.data.raw_size_gb)
-
         # Add tags
         if manifest.tags:
             defaults["tags"] = ", ".join(manifest.tags)
@@ -430,13 +466,38 @@ def run_menu(args: argparse.Namespace) -> int:
             if manifest.acquisition.microscope:
                 defaults["microscope"] = manifest.acquisition.microscope
             if manifest.acquisition.modality:
-                defaults["modality"] = manifest.acquisition.modality
+                modality_value = manifest.acquisition.modality
+                known_modalities = {
+                    "confocal",
+                    "widefield",
+                    "light-sheet",
+                    "two-photon",
+                    "super-resolution",
+                    "em",
+                    "brightfield",
+                    "phase-contrast",
+                    "dic",
+                    "other",
+                }
+                if modality_value in known_modalities:
+                    defaults["modality"] = modality_value
+                else:
+                    defaults["modality"] = "other"
+                    defaults["modality_custom"] = modality_value
             if manifest.acquisition.objective:
                 defaults["objective"] = manifest.acquisition.objective
             if manifest.acquisition.channels:
-                defaults["channels_text"] = "\n".join(
-                    [ch.name for ch in manifest.acquisition.channels]
-                )
+                defaults["channels"] = [
+                    {
+                        "name": ch.name,
+                        "fluorophore": ch.fluorophore or "",
+                        "excitation_nm": str(ch.excitation_nm)
+                        if ch.excitation_nm
+                        else "",
+                        "emission_nm": str(ch.emission_nm) if ch.emission_nm else "",
+                    }
+                    for ch in manifest.acquisition.channels
+                ]
             if manifest.acquisition.voxel_size:
                 vs = manifest.acquisition.voxel_size
                 if vs.x_um:
@@ -453,17 +514,53 @@ def run_menu(args: argparse.Namespace) -> int:
         # Add tools fields
         if manifest.tools:
             if manifest.tools.environment:
-                defaults["environment"] = manifest.tools.environment
+                env_value = manifest.tools.environment
+                known_env = {
+                    "conda",
+                    "pixi",
+                    "venv",
+                    "docker",
+                    "devcontainer",
+                    "renv",
+                    "nix",
+                    "c-cpp",
+                    "js-ts",
+                    "other",
+                }
+                if env_value in known_env:
+                    defaults["environment"] = env_value
+                else:
+                    defaults["environment"] = "other"
+                    defaults["environment_custom"] = env_value
             if manifest.tools.env_file:
                 defaults["env_file"] = manifest.tools.env_file
+            if manifest.tools.git_remote:
+                defaults["git_remote"] = manifest.tools.git_remote
             if manifest.tools.languages:
-                defaults["languages"] = ", ".join(manifest.tools.languages)
-            if manifest.tools.key_packages:
-                defaults["packages_text"] = "\n".join(
-                    [pkg.name for pkg in manifest.tools.key_packages]
-                )
-            if manifest.tools.scripts_dir:
-                defaults["scripts_dir"] = manifest.tools.scripts_dir
+                defaults["languages"] = manifest.tools.languages
+            if manifest.tools.software:
+                defaults["software"] = manifest.tools.software
+            if manifest.tools.cluster_packages:
+                defaults["cluster_packages"] = manifest.tools.cluster_packages
+        # Add method fields
+        if manifest.method:
+            if manifest.method.file_path:
+                defaults["method_path"] = manifest.method.file_path
+        # Add hardware profiles
+        if manifest.hardware_profiles:
+            defaults["hardware_profiles"] = [
+                {
+                    "name": profile.name,
+                    "cpu": profile.cpu,
+                    "ram": profile.ram,
+                    "gpu": profile.gpu,
+                    "notes": profile.notes,
+                    "is_cluster": profile.is_cluster,
+                    "partition": profile.partition,
+                    "node_type": profile.node_type,
+                }
+                for profile in manifest.hardware_profiles
+            ]
     app = BAApp(
         mode="menu",
         recent_entries=recent,

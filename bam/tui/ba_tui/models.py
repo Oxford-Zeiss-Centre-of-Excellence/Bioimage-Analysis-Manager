@@ -328,16 +328,29 @@ class Acquisition(BaseModel):
         return "\n".join(c.to_pipe_string() for c in self.channels)
 
 
+class HardwareProfile(BaseModel):
+    """Hardware profile for a compute environment."""
+
+    name: str
+    cpu: str = ""
+    ram: str = ""
+    gpu: str = ""
+    notes: str = ""
+    is_cluster: bool = False
+    partition: str = ""
+    node_type: str = ""
+
+
+class Method(BaseModel):
+    """Method documentation reference."""
+
+    file_path: str = ""
+    template_used: str = ""
+
+
 # =============================================================================
 # Tools Models
 # =============================================================================
-
-
-class Package(BaseModel):
-    """A key software package used in the project."""
-
-    name: str
-    version: str = ""
 
 
 class Tools(BaseModel):
@@ -346,9 +359,9 @@ class Tools(BaseModel):
     environment: str = ""  # conda | pixi | venv | docker
     env_file: str = ""  # Path to environment.yaml or requirements.txt
     languages: list[str] = Field(default_factory=list)  # python, R, fiji-macro
-    key_packages: list[Package] = Field(default_factory=list)
-    scripts_dir: str = ""
-    notebooks_dir: str = ""
+    software: list[str] = Field(default_factory=list)
+    git_remote: str = ""
+    cluster_packages: list[str] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -598,6 +611,8 @@ class Manifest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     acquisition: Optional[Acquisition] = None
     tools: Optional[Tools] = None
+    hardware_profiles: list[HardwareProfile] = Field(default_factory=list)
+    method: Optional[Method] = None
     billing: Optional[Billing] = None
     quality: Optional[Quality] = None
     publication: Optional[Publication] = None

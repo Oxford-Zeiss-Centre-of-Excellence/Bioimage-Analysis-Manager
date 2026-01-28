@@ -21,26 +21,33 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    Markdown,
     OptionList,
     ProgressBar,
     Select,
+    SelectionList,
     Static,
     TabbedContent,
     TextArea,
 )
 from textual.widgets.option_list import Option
+from textual.widgets.selection_list import Selection
 
 from .io import dump_manifest
 from .models import Artifact, LogEntry, Manifest, TaskStatus, build_manifest
 from .scaffold import ensure_data_symlink, ensure_directories, ensure_worklog
 from .screens import (
+    ChannelModal,
     CollaboratorModal,
+    CustomInputModal,
     DirectoryPickerScreen,
     ExitConfirmScreen,
+    HardwareModal,
     NewManifestConfirmScreen,
     ResetConfirmScreen,
 )
 from .styles import APP_CSS
+from .utils import detect_git_remote, detect_hardware
 from .tabs.admin import compose_admin_tab
 from .tabs.hub import compose_hub_tab
 from .tabs.idea import compose_idea_tab
@@ -178,7 +185,16 @@ class BAApp(App[dict[str, object] | None]):
         self._active_path_input: Optional[str] = None
         self._path_suggestions_visible = False
         self._path_suggestions: Optional[OptionList] = None
+        self._active_method_input: Optional[str] = None
+        self._method_path_suggestions_visible = False
+        self._method_path_suggestions: Optional[OptionList] = None
         self._ui_state_path = Path.home() / ".config" / "bam" / "ui_state.yaml"
+        self._hardware_profiles: list[dict[str, str | bool]] = []
+        self._method_path: str = ""
+        self._method_template_used: str = ""
+        self._method_preview_path: str = ""
+        self._method_preview_mtime: float | None = None
+        self._selected_hardware_index: Optional[int] = None
         self._collaborator_rows: list[dict[str, str]] = []
         if self._defaults.get("collaborators"):
             self._collaborator_rows = [
@@ -189,6 +205,35 @@ class BAApp(App[dict[str, object] | None]):
                     "affiliation": str(item.get("affiliation", "")),
                 }
                 for item in self._defaults.get("collaborators", [])
+            ]
+        if self._defaults.get("hardware_profiles"):
+            self._hardware_profiles = [
+                {
+                    "name": str(item.get("name", "")),
+                    "cpu": str(item.get("cpu", "")),
+                    "cores": str(item.get("cores", "")),
+                    "ram": str(item.get("ram", "")),
+                    "gpu": str(item.get("gpu", "")),
+                    "notes": str(item.get("notes", "")),
+                    "is_cluster": bool(item.get("is_cluster", False)),
+                    "partition": str(item.get("partition", "")),
+                    "node_type": str(item.get("node_type", "")),
+                }
+                for item in self._defaults.get("hardware_profiles", [])
+            ]
+        if self._defaults.get("method_path"):
+            self._method_path = str(self._defaults.get("method_path"))
+
+        self._channel_rows: list[dict[str, str]] = []
+        if self._defaults.get("channels"):
+            self._channel_rows = [
+                {
+                    "name": str(item.get("name", "")),
+                    "fluorophore": str(item.get("fluorophore", "")),
+                    "excitation_nm": str(item.get("excitation_nm", "")),
+                    "emission_nm": str(item.get("emission_nm", "")),
+                }
+                for item in self._defaults.get("channels", [])
             ]
 
         version = "unknown"
@@ -226,6 +271,7 @@ class BAApp(App[dict[str, object] | None]):
         self._refresh_artifact_list()
         self._load_manifest_sections()
         self.set_interval(1, self._tick_worklog)
+        self.set_interval(1, self._poll_method_preview)
 
         # Auto-check locally mounted if endpoint is Local
         try:
@@ -254,8 +300,25 @@ class BAApp(App[dict[str, object] | None]):
             self._path_suggestions = None
 
         try:
+            self._method_path_suggestions = self.query_one(
+                "#method_path_suggestions", OptionList
+            )
+        except Exception:
+            self._method_path_suggestions = None
+
+        try:
             self._ensure_collaborator_rows()
             self._populate_collaborators_table()
+        except Exception:
+            pass
+
+        try:
+            self._populate_channels_table()
+        except Exception:
+            pass
+
+        try:
+            self._populate_hardware_table()
         except Exception:
             pass
 
@@ -270,6 +333,13 @@ class BAApp(App[dict[str, object] | None]):
         # Notify if existing manifest was loaded
         if self._defaults.get("project_name"):
             self.notify("Manifest loaded", severity="information")
+
+        try:
+            git_remote_input = self.query_one("#git_remote", Input)
+            if not git_remote_input.value.strip():
+                git_remote_input.value = detect_git_remote(self._project_root)
+        except Exception:
+            pass
 
     def on_shutdown(self) -> None:
         self._store_ui_state()
@@ -320,6 +390,11 @@ class BAApp(App[dict[str, object] | None]):
 
     def _store_ui_state(self) -> None:
         try:
+            if not self.screen_stack:
+                return
+        except Exception:
+            return
+        try:
             tabbed = self.query_one("#tabs", TabbedContent)
             active_tab = tabbed.active
         except Exception:
@@ -365,6 +440,22 @@ class BAApp(App[dict[str, object] | None]):
                 self._open_directory_picker("data_source")
         elif button_id == "browse_local":
             self._open_directory_picker("data_local")
+        elif button_id == "browse_method":
+            self._open_directory_picker("method_path")
+        elif button_id == "method_template":
+            self._create_method_template()
+        elif button_id == "hardware_add":
+            self._add_hardware_profile()
+        elif button_id == "hardware_remove":
+            self._remove_selected_hardware()
+        elif button_id == "hardware_detect":
+            self._detect_hardware_profile()
+        elif button_id == "languages_add":
+            self._add_list_entries("languages_list", "Add Languages")
+        elif button_id == "software_add":
+            self._add_list_entries("software_list", "Add Software")
+        elif button_id == "cluster_packages_add":
+            self._add_list_entries("cluster_packages_list", "Add Cluster Packages")
         elif button_id == "idea_cancel":
             self.exit(None)
         elif button_id == "task_add":
@@ -386,6 +477,10 @@ class BAApp(App[dict[str, object] | None]):
         elif event.input.id in ("project_name", "analyst", "data_source", "data_local"):
             self._refresh_init_validation()
             self._hide_path_suggestions()
+        elif event.input.id == "method_path":
+            self._hide_method_path_suggestions()
+            self._load_method_preview()
+            self._maybe_sync_method_path()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id in (
@@ -414,6 +509,17 @@ class BAApp(App[dict[str, object] | None]):
             except Exception:
                 pass
 
+        if event.input.id == "method_path":
+            try:
+                focused = self.focused
+                if focused is event.input:
+                    self._update_method_path_suggestions(event.input.id, event.value)
+                else:
+                    self._hide_method_path_suggestions()
+            except Exception:
+                pass
+            self._load_method_preview_if_exists(event.value)
+
         if event.input.id == "data_size_gb":
             cleaned = "".join(ch for ch in event.value if ch.isdigit() or ch == ".")
             if cleaned != event.value:
@@ -437,6 +543,12 @@ class BAApp(App[dict[str, object] | None]):
         else:
             self._hide_path_suggestions()
 
+        if input_id == "method_path":
+            try:
+                self._update_method_path_suggestions(input_id, event.input.value)
+            except Exception:
+                pass
+
     def on_input_blurred(self, event) -> None:
         input_id = getattr(event.input, "id", "")
         if input_id in ("data_source", "data_local"):
@@ -446,6 +558,16 @@ class BAApp(App[dict[str, object] | None]):
             if focused and getattr(focused, "id", "") == "path_suggestions":
                 return
             self._hide_path_suggestions()
+        if input_id == "method_path":
+            focused = self.focused
+            if (
+                self._method_path_suggestions
+                and focused is self._method_path_suggestions
+            ):
+                return
+            if focused and getattr(focused, "id", "") == "method_path_suggestions":
+                return
+            self._hide_method_path_suggestions()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "data_endpoint":
@@ -457,8 +579,45 @@ class BAApp(App[dict[str, object] | None]):
                 self._refresh_sync_button_state()
             except Exception:
                 pass
+            try:
+                row = self.query_one("#data_endpoint_other_row", Horizontal)
+                if event.value and str(event.value).lower() == "other":
+                    row.remove_class("hidden")
+                else:
+                    row.add_class("hidden")
+            except Exception:
+                pass
         elif event.select.id == "collab_role_select":
             pass
+        elif event.select.id == "data_size_unit":
+            pass
+        elif event.select.id == "data_format":
+            try:
+                row = self.query_one("#data_format_other_row", Horizontal)
+                if event.value and str(event.value).lower() == "other":
+                    row.remove_class("hidden")
+                else:
+                    row.add_class("hidden")
+            except Exception:
+                pass
+        elif event.select.id == "modality":
+            try:
+                row = self.query_one("#modality_other_row", Horizontal)
+                if event.value and str(event.value).lower() == "other":
+                    row.remove_class("hidden")
+                else:
+                    row.add_class("hidden")
+            except Exception:
+                pass
+        elif event.select.id == "environment":
+            try:
+                row = self.query_one("#environment_other_row", Horizontal)
+                if event.value and str(event.value).lower() == "other":
+                    row.remove_class("hidden")
+                else:
+                    row.add_class("hidden")
+            except Exception:
+                pass
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "locally_mounted":
@@ -478,30 +637,221 @@ class BAApp(App[dict[str, object] | None]):
             self._toggle_data_sections(event.value)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row selection in collaborators table."""
-        if event.data_table.id != "collaborators_table":
-            return
-
+        """Handle row selection in collaborators or channels table."""
         row_key = event.row_key.value
         if row_key is None:
             return
 
-        try:
-            idx = int(row_key)
-            if 0 <= idx < len(self._collaborator_rows):
-                row_data = self._collaborator_rows[idx]
-                self.push_screen(
-                    CollaboratorModal(self._load_role_options(), row_data),
-                    lambda data: self._handle_edit_collaborator(idx, data),
-                )
-        except (ValueError, IndexError):
-            pass
+        if event.data_table.id == "collaborators_table":
+            try:
+                idx = int(row_key)
+                if 0 <= idx < len(self._collaborator_rows):
+                    row_data = self._collaborator_rows[idx]
+                    self.push_screen(
+                        CollaboratorModal(self._load_role_options(), row_data),
+                        lambda data, i=idx: self._handle_edit_collaborator(i, data),
+                    )
+            except (ValueError, IndexError):
+                pass
+
+        elif event.data_table.id == "channels_table":
+            try:
+                idx = int(row_key)
+                if 0 <= idx < len(self._channel_rows):
+                    row_data = self._channel_rows[idx]
+                    self.push_screen(
+                        ChannelModal(row_data),
+                        lambda data, i=idx: self._handle_edit_channel(i, data),
+                    )
+            except (ValueError, IndexError):
+                pass
+
+        elif event.data_table.id == "hardware_table":
+            try:
+                idx = int(row_key)
+                if 0 <= idx < len(self._hardware_profiles):
+                    self._selected_hardware_index = idx
+                    row_data = self._hardware_profiles[idx]
+                    self.push_screen(
+                        HardwareModal(row_data),
+                        lambda data, i=idx: self._handle_edit_hardware(i, data),
+                    )
+            except (ValueError, IndexError):
+                pass
 
     def _handle_edit_collaborator(self, idx: int, data: dict[str, str] | None) -> None:
         """Update collaborator data after modal close."""
         if data and 0 <= idx < len(self._collaborator_rows):
             self._collaborator_rows[idx] = data
             self._populate_collaborators_table()
+
+    def _handle_edit_hardware(
+        self, idx: int, data: dict[str, str | bool] | None
+    ) -> None:
+        if data and 0 <= idx < len(self._hardware_profiles):
+            self._hardware_profiles[idx] = data
+            self._populate_hardware_table()
+
+    def _populate_hardware_table(self) -> None:
+        try:
+            table = self.query_one("#hardware_table", DataTable)
+            table.clear(columns=True)
+            table.add_columns("Name", "CPU", "Cores", "RAM", "GPU")
+            for idx, row in enumerate(self._hardware_profiles):
+                table.add_row(
+                    row.get("name", ""),
+                    row.get("cpu", ""),
+                    row.get("cores", ""),
+                    row.get("ram", ""),
+                    row.get("gpu", ""),
+                    key=str(idx),
+                )
+        except Exception:
+            pass
+
+    def _add_hardware_profile(self) -> None:
+        self.push_screen(HardwareModal(), self._handle_new_hardware)
+
+    def _handle_new_hardware(self, data: dict[str, str | bool] | None) -> None:
+        if data:
+            self._hardware_profiles.append(data)
+            self._populate_hardware_table()
+
+    def _remove_selected_hardware(self) -> None:
+        try:
+            table = self.query_one("#hardware_table", DataTable)
+            idx = table.cursor_row
+            if idx is None:
+                return
+            if 0 <= idx < len(self._hardware_profiles):
+                self._hardware_profiles.pop(idx)
+            self._populate_hardware_table()
+        except Exception:
+            pass
+
+    def _detect_hardware_profile(self) -> None:
+        try:
+            detected = detect_hardware()
+            profile = {
+                "name": "local",
+                "cpu": detected.get("cpu", ""),
+                "cores": detected.get("cores", ""),
+                "ram": detected.get("ram", ""),
+                "gpu": detected.get("gpu", ""),
+                "notes": "",
+                "is_cluster": False,
+                "partition": "",
+                "node_type": "",
+            }
+            self._hardware_profiles.append(profile)
+            self._populate_hardware_table()
+        except Exception:
+            pass
+
+    def _create_method_template(self) -> None:
+        try:
+            path_input = self.query_one("#method_path", Input)
+            method_path = path_input.value.strip() or str(
+                self._project_root / "method.md"
+            )
+            content = (
+                "# Methods\n\n"
+                "## Overview\n\n"
+                "Describe the analysis workflow.\n\n"
+                "## Data\n\n"
+                "Describe input data and preprocessing.\n\n"
+                "## Analysis\n\n"
+                "Describe key steps, software, and parameters.\n"
+            )
+            path = Path(method_path).expanduser().resolve()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            created = False
+            if not path.exists():
+                path.write_text(content)
+                created = True
+            path_input.value = str(path)
+            self._method_path = str(path)
+            self._method_template_used = "default"
+            self._load_method_preview()
+            if created:
+                self.notify("Method template created", severity="information")
+            else:
+                self.notify("Method template already exists", severity="warning")
+        except Exception as exc:
+            self.notify(f"Template creation failed: {exc}", severity="error")
+
+    def _add_list_entries(self, list_id: str, title: str) -> None:
+        """Open modal to add comma-separated entries."""
+        self.push_screen(
+            CustomInputModal(title, placeholder="Comma-separated"),
+            lambda items, lid=list_id: self._handle_list_entries(lid, items),
+        )
+
+    def _handle_list_entries(self, list_id: str, items: list[str] | None) -> None:
+        if not items:
+            return
+        try:
+            selection_list = self.query_one(f"#{list_id}", SelectionList)
+            existing = {str(opt.id) for opt in selection_list._options}
+            for item in items:
+                if item not in existing:
+                    selection_list.add_option(Selection(item, item, True))
+                selection_list.select(item)
+        except Exception:
+            pass
+
+    def _load_method_preview(self) -> None:
+        try:
+            path = self.query_one("#method_path", Input).value.strip()
+            if not path:
+                return
+            method_path = Path(path).expanduser()
+            text = method_path.read_text()
+            self.query_one("#method_preview", Markdown).update(text)
+            self._method_preview_path = str(method_path)
+            try:
+                self._method_preview_mtime = method_path.stat().st_mtime
+            except Exception:
+                self._method_preview_mtime = None
+        except Exception:
+            pass
+
+    def _load_method_preview_if_exists(self, path: str) -> None:
+        try:
+            method_path = Path(path).expanduser()
+            if method_path.is_file():
+                text = method_path.read_text()
+                self.query_one("#method_preview", Markdown).update(text)
+                self._method_preview_path = str(method_path)
+                try:
+                    self._method_preview_mtime = method_path.stat().st_mtime
+                except Exception:
+                    self._method_preview_mtime = None
+        except Exception:
+            pass
+
+    def _poll_method_preview(self) -> None:
+        if not self._method_preview_path:
+            return
+        try:
+            method_path = Path(self._method_preview_path)
+            if not method_path.exists():
+                return
+            mtime = method_path.stat().st_mtime
+            if self._method_preview_mtime is None or mtime > self._method_preview_mtime:
+                self._method_preview_mtime = mtime
+                text = method_path.read_text()
+                self.query_one("#method_preview", Markdown).update(text)
+        except Exception:
+            pass
+
+    def _maybe_sync_method_path(self) -> None:
+        try:
+            current = self.query_one("#method_path", Input).value.strip()
+            if current and current != self._method_path:
+                self._method_path = current
+        except Exception:
+            pass
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id == "path_suggestions":
@@ -529,60 +879,141 @@ class BAApp(App[dict[str, object] | None]):
                         _move_cursor()
                 except Exception:
                     pass
+        elif event.option_list.id == "method_path_suggestions":
+            if self._active_method_input:
+                try:
+                    input_widget = self.query_one(
+                        f"#{self._active_method_input}", Input
+                    )
+                    selected = str(event.option.prompt)
+                    input_widget.value = selected
+                    self._hide_method_path_suggestions()
+                    input_widget.focus()
+
+                    def _move_cursor() -> None:
+                        try:
+                            input_widget.cursor_position = len(selected)
+                        except Exception:
+                            pass
+
+                    try:
+                        self.call_later(_move_cursor)
+                    except Exception:
+                        _move_cursor()
+                    self._load_method_preview()
+                except Exception:
+                    pass
 
     def on_key(self, event) -> None:
         if event.key in ("ctrl+a", "ctrl+d"):
             try:
                 tabbed = self.query_one("#tabs", TabbedContent)
-                table = self.query_one("#collaborators_table", DataTable)
-                if tabbed.active == "setup" and table.has_focus:
-                    if event.key == "ctrl+a":
-                        self.action_add_collaborator_row()
-                    else:
-                        self.action_remove_collaborator_row()
-                    event.prevent_default()
-                    event.stop()
-                    return
+                # Handle collaborators table in setup tab
+                if tabbed.active == "setup":
+                    table = self.query_one("#collaborators_table", DataTable)
+                    if table.has_focus:
+                        if event.key == "ctrl+a":
+                            self.action_add_collaborator_row()
+                        else:
+                            self.action_remove_collaborator_row()
+                        event.prevent_default()
+                        event.stop()
+                        return
+                # Handle channels table in science tab
+                elif tabbed.active == "science":
+                    table = self.query_one("#channels_table", DataTable)
+                    if table.has_focus:
+                        if event.key == "ctrl+a":
+                            self.action_add_channel_row()
+                        else:
+                            self.action_remove_channel_row()
+                        event.prevent_default()
+                        event.stop()
+                        return
+                    hardware_table = self.query_one("#hardware_table", DataTable)
+                    if hardware_table.has_focus:
+                        if event.key == "ctrl+a":
+                            self._add_hardware_profile()
+                        else:
+                            self._remove_selected_hardware()
+                        event.prevent_default()
+                        event.stop()
+                        return
             except Exception:
                 pass
 
         # Handle path suggestions keyboard navigation
         try:
-            if not self._path_suggestions_visible:
-                return
-            suggestions = self._path_suggestions or self.query_one(
-                "#path_suggestions", OptionList
-            )
-            if suggestions.has_class("visible"):
-                # Escape: hide suggestions and return focus to input
-                if event.key == "escape":
-                    if self._active_path_input:
-                        input_widget = self.query_one(
-                            f"#{self._active_path_input}", Input
-                        )
-                        self._hide_path_suggestions()
-                        input_widget.focus()
-                        event.prevent_default()
-                        event.stop()
-                # Down arrow from input: focus suggestions
-                elif event.key == "down" and self._active_path_input:
-                    focused = self.focused
-                    if focused and focused.id == self._active_path_input:
-                        suggestions.focus()
-                        if suggestions.option_count > 0:
-                            suggestions.highlighted = 0
-                        event.prevent_default()
-                        event.stop()
-                # Up arrow from first suggestion: return to input
-                elif event.key == "up":
-                    if self.focused == suggestions and suggestions.highlighted == 0:
+            if self._path_suggestions_visible:
+                suggestions = self._path_suggestions or self.query_one(
+                    "#path_suggestions", OptionList
+                )
+                if suggestions.has_class("visible"):
+                    # Escape: hide suggestions and return focus to input
+                    if event.key == "escape":
                         if self._active_path_input:
                             input_widget = self.query_one(
                                 f"#{self._active_path_input}", Input
                             )
+                            self._hide_path_suggestions()
                             input_widget.focus()
                             event.prevent_default()
                             event.stop()
+                    # Down arrow from input: focus suggestions
+                    elif event.key == "down" and self._active_path_input:
+                        focused = self.focused
+                        if focused and focused.id == self._active_path_input:
+                            suggestions.focus()
+                            if suggestions.option_count > 0:
+                                suggestions.highlighted = 0
+                            event.prevent_default()
+                            event.stop()
+                    # Up arrow from first suggestion: return to input
+                    elif event.key == "up":
+                        if self.focused == suggestions and suggestions.highlighted == 0:
+                            if self._active_path_input:
+                                input_widget = self.query_one(
+                                    f"#{self._active_path_input}", Input
+                                )
+                                input_widget.focus()
+                                event.prevent_default()
+                                event.stop()
+        except Exception:
+            pass
+
+        # Handle method path suggestions
+        try:
+            if self._method_path_suggestions_visible:
+                suggestions = self._method_path_suggestions or self.query_one(
+                    "#method_path_suggestions", OptionList
+                )
+                if suggestions.has_class("visible"):
+                    if event.key == "escape":
+                        if self._active_method_input:
+                            input_widget = self.query_one(
+                                f"#{self._active_method_input}", Input
+                            )
+                            self._hide_method_path_suggestions()
+                            input_widget.focus()
+                            event.prevent_default()
+                            event.stop()
+                    elif event.key == "down" and self._active_method_input:
+                        focused = self.focused
+                        if focused and focused.id == self._active_method_input:
+                            suggestions.focus()
+                            if suggestions.option_count > 0:
+                                suggestions.highlighted = 0
+                            event.prevent_default()
+                            event.stop()
+                    elif event.key == "up":
+                        if self.focused == suggestions and suggestions.highlighted == 0:
+                            if self._active_method_input:
+                                input_widget = self.query_one(
+                                    f"#{self._active_method_input}", Input
+                                )
+                                input_widget.focus()
+                                event.prevent_default()
+                                event.stop()
         except Exception:
             pass
 
@@ -651,7 +1082,9 @@ class BAApp(App[dict[str, object] | None]):
             pass
         try:
             if manifest.project.status:
-                self.query_one("#project_status", Select).value = manifest.project.status
+                self.query_one(
+                    "#project_status", Select
+                ).value = manifest.project.status
         except Exception:
             pass
 
@@ -695,36 +1128,90 @@ class BAApp(App[dict[str, object] | None]):
                 self.query_one("#data_enabled", Checkbox).value = manifest.data.enabled
                 self._toggle_data_sections(manifest.data.enabled)
                 if manifest.data.endpoint:
-                    self.query_one("#data_endpoint", Select).value = manifest.data.endpoint
-                self.query_one("#data_source", Input).value = str(manifest.data.source or "")
-                self.query_one("#data_local", Input).value = str(manifest.data.local or "")
-                self.query_one("#locally_mounted", Checkbox).value = manifest.data.locally_mounted
+                    self.query_one(
+                        "#data_endpoint", Select
+                    ).value = manifest.data.endpoint
+                self.query_one("#data_source", Input).value = str(
+                    manifest.data.source or ""
+                )
+                self.query_one("#data_local", Input).value = str(
+                    manifest.data.local or ""
+                )
+                self.query_one(
+                    "#locally_mounted", Checkbox
+                ).value = manifest.data.locally_mounted
                 if manifest.data.format:
                     self.query_one("#data_format", Select).value = manifest.data.format
-                self.query_one("#data_description", Input).value = manifest.data.description or ""
+                self.query_one("#data_description", Input).value = (
+                    manifest.data.description or ""
+                )
                 if manifest.data.raw_size_gb is not None:
-                    self.query_one("#data_size_gb", Input).value = str(manifest.data.raw_size_gb)
+                    self.query_one("#data_size_gb", Input).value = str(
+                        manifest.data.raw_size_gb
+                    )
                 if manifest.data.raw_size_unit:
-                    self.query_one("#data_size_unit", Select).value = manifest.data.raw_size_unit
-                self.query_one("#data_compressed", Checkbox).value = manifest.data.compressed or False
+                    self.query_one(
+                        "#data_size_unit", Select
+                    ).value = manifest.data.raw_size_unit
+                self.query_one("#data_compressed", Checkbox).value = (
+                    manifest.data.compressed or False
+                )
                 if manifest.data.uncompressed_size_gb is not None:
-                    self.query_one("#data_uncompressed_size_gb", Input).value = str(manifest.data.uncompressed_size_gb)
+                    self.query_one("#data_uncompressed_size_gb", Input).value = str(
+                        manifest.data.uncompressed_size_gb
+                    )
                 if manifest.data.uncompressed_size_unit:
-                    self.query_one("#data_uncompressed_size_unit", Select).value = manifest.data.uncompressed_size_unit
+                    self.query_one(
+                        "#data_uncompressed_size_unit", Select
+                    ).value = manifest.data.uncompressed_size_unit
         except Exception:
             pass
 
         # Acquisition fields
         try:
             if manifest.acquisition:
-                self.query_one("#microscope", Input).value = manifest.acquisition.microscope or ""
+                self.query_one("#microscope", Input).value = (
+                    manifest.acquisition.microscope or ""
+                )
                 if manifest.acquisition.modality:
-                    self.query_one("#modality", Select).value = manifest.acquisition.modality
-                self.query_one("#objective", Input).value = manifest.acquisition.objective or ""
+                    modality_value = manifest.acquisition.modality
+                    known_modalities = {
+                        "confocal",
+                        "widefield",
+                        "light-sheet",
+                        "two-photon",
+                        "super-resolution",
+                        "em",
+                        "brightfield",
+                        "phase-contrast",
+                        "dic",
+                        "other",
+                    }
+                    if modality_value in known_modalities:
+                        self.query_one("#modality", Select).value = modality_value
+                    else:
+                        self.query_one("#modality", Select).value = "other"
+                        self.query_one("#modality_custom", Input).value = modality_value
+                self.query_one("#objective", Input).value = (
+                    manifest.acquisition.objective or ""
+                )
                 if manifest.acquisition.channels:
-                    self.query_one("#channels_text", TextArea).text = "\n".join(
-                        ch.name for ch in manifest.acquisition.channels
-                    )
+                    self._channel_rows = [
+                        {
+                            "name": ch.name,
+                            "fluorophore": ch.fluorophore or "",
+                            "excitation_nm": str(ch.excitation_nm)
+                            if ch.excitation_nm
+                            else "",
+                            "emission_nm": str(ch.emission_nm)
+                            if ch.emission_nm
+                            else "",
+                        }
+                        for ch in manifest.acquisition.channels
+                    ]
+                else:
+                    self._channel_rows = []
+                self._populate_channels_table()
                 if manifest.acquisition.voxel_size:
                     vs = manifest.acquisition.voxel_size
                     if vs.x_um is not None:
@@ -734,24 +1221,103 @@ class BAApp(App[dict[str, object] | None]):
                     if vs.z_um is not None:
                         self.query_one("#voxel_z", Input).value = str(vs.z_um)
                 if manifest.acquisition.time_interval_s is not None:
-                    self.query_one("#time_interval", Input).value = str(manifest.acquisition.time_interval_s)
-                self.query_one("#acquisition_notes", TextArea).text = manifest.acquisition.notes or ""
+                    self.query_one("#time_interval", Input).value = str(
+                        manifest.acquisition.time_interval_s
+                    )
+                self.query_one("#acquisition_notes", TextArea).text = (
+                    manifest.acquisition.notes or ""
+                )
         except Exception:
             pass
 
         # Tools fields
         try:
             if manifest.tools:
+                if manifest.tools.git_remote:
+                    self.query_one(
+                        "#git_remote", Input
+                    ).value = manifest.tools.git_remote
                 if manifest.tools.environment:
-                    self.query_one("#environment", Select).value = manifest.tools.environment
+                    self.query_one(
+                        "#environment", Select
+                    ).value = manifest.tools.environment
                 self.query_one("#env_file", Input).value = manifest.tools.env_file or ""
                 if manifest.tools.languages:
-                    self.query_one("#languages", Input).value = ", ".join(manifest.tools.languages)
-                if manifest.tools.key_packages:
-                    self.query_one("#packages_text", TextArea).text = "\n".join(
-                        pkg.name for pkg in manifest.tools.key_packages
-                    )
-                self.query_one("#scripts_dir", Input).value = manifest.tools.scripts_dir or ""
+                    try:
+                        languages_list = self.query_one(
+                            "#languages_list", SelectionList
+                        )
+                        languages_list.deselect_all()
+                        for item in languages_list._options:
+                            if item.id in manifest.tools.languages:
+                                languages_list.select(item.id)
+                    except Exception:
+                        pass
+                if manifest.tools.software:
+                    try:
+                        software_list = self.query_one("#software_list", SelectionList)
+                        software_list.deselect_all()
+                        for item in software_list._options:
+                            if item.id in manifest.tools.software:
+                                software_list.select(item.id)
+                    except Exception:
+                        pass
+                if manifest.tools.languages:
+                    try:
+                        languages_list = self.query_one(
+                            "#languages_list", SelectionList
+                        )
+                        languages_list.deselect_all()
+                        for item in languages_list._options:
+                            if item.id in manifest.tools.languages:
+                                languages_list.select(item.id)
+                    except Exception:
+                        pass
+                if manifest.tools.cluster_packages:
+                    try:
+                        cluster_list = self.query_one(
+                            "#cluster_packages_list", SelectionList
+                        )
+                        cluster_list.deselect_all()
+                        for item in cluster_list._options:
+                            if item.id in manifest.tools.cluster_packages:
+                                cluster_list.select(item.id)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Method fields
+        try:
+            if manifest.method:
+                if manifest.method.file_path:
+                    self.query_one(
+                        "#method_path", Input
+                    ).value = manifest.method.file_path
+                    self._load_method_preview()
+                if manifest.method.template_used:
+                    self._method_template_used = manifest.method.template_used
+        except Exception:
+            pass
+
+        # Hardware profiles
+        try:
+            if manifest.hardware_profiles:
+                self._hardware_profiles = [
+                    {
+                        "name": profile.name,
+                        "cpu": profile.cpu,
+                        "cores": getattr(profile, "cores", ""),
+                        "ram": profile.ram,
+                        "gpu": profile.gpu,
+                        "notes": profile.notes,
+                        "is_cluster": profile.is_cluster,
+                        "partition": profile.partition,
+                        "node_type": profile.node_type,
+                    }
+                    for profile in manifest.hardware_profiles
+                ]
+                self._populate_hardware_table()
         except Exception:
             pass
 
@@ -936,18 +1502,25 @@ class BAApp(App[dict[str, object] | None]):
                     acquisition_data["microscope"] = microscope
 
                 modality_select = self.query_one("#modality", Select)
-                if modality_select.value and modality_select.value != Select.BLANK:
-                    acquisition_data["modality"] = str(modality_select.value)
+                modality_value = (
+                    str(modality_select.value)
+                    if modality_select.value and modality_select.value != Select.BLANK
+                    else ""
+                )
+                if modality_value.lower() == "other":
+                    custom = self.query_one("#modality_custom", Input).value.strip()
+                    if custom:
+                        modality_value = custom
+                if modality_value:
+                    acquisition_data["modality"] = modality_value
 
                 objective = self.query_one("#objective", Input).value.strip()
                 if objective:
                     acquisition_data["objective"] = objective
 
-                channels = self.query_one("#channels_text", TextArea).text.strip()
+                channels = self._collect_channels()
                 if channels:
-                    acquisition_data["channels"] = [
-                        ch.strip() for ch in channels.split("\n") if ch.strip()
-                    ]
+                    acquisition_data["channels"] = channels
 
                 voxel_x = self.query_one("#voxel_x", Input).value.strip()
                 voxel_y = self.query_one("#voxel_y", Input).value.strip()
@@ -979,32 +1552,52 @@ class BAApp(App[dict[str, object] | None]):
             try:
                 tools_data = {}
 
+                git_remote = self.query_one("#git_remote", Input).value.strip()
+                if git_remote:
+                    tools_data["git_remote"] = git_remote
+
                 env_select = self.query_one("#environment", Select)
-                if env_select.value and env_select.value != Select.BLANK:
-                    tools_data["environment"] = str(env_select.value)
+                environment_value = (
+                    str(env_select.value)
+                    if env_select.value and env_select.value != Select.BLANK
+                    else ""
+                )
+                if environment_value.lower() == "other":
+                    custom = self.query_one("#environment_custom", Input).value.strip()
+                    if custom:
+                        environment_value = custom
+                if environment_value:
+                    tools_data["environment"] = environment_value
 
                 env_file = self.query_one("#env_file", Input).value.strip()
                 if env_file:
                     tools_data["env_file"] = env_file
 
-                languages = self.query_one("#languages", Input).value.strip()
-                if languages:
-                    tools_data["languages"] = [
-                        lang.strip() for lang in languages.split(",") if lang.strip()
-                    ]
+                try:
+                    languages_list = self.query_one("#languages_list", SelectionList)
+                    languages = [str(item) for item in languages_list.selected]
+                    if languages:
+                        tools_data["languages"] = languages
+                except Exception:
+                    pass
 
-                packages = self.query_one("#packages_text", TextArea).text.strip()
-                if packages:
-                    # Store as list of package objects with just names
-                    tools_data["key_packages"] = [
-                        {"name": pkg.strip()}
-                        for pkg in packages.split("\n")
-                        if pkg.strip()
-                    ]
+                try:
+                    software_list = self.query_one("#software_list", SelectionList)
+                    software = [str(item) for item in software_list.selected]
+                    if software:
+                        tools_data["software"] = software
+                except Exception:
+                    pass
 
-                scripts_dir = self.query_one("#scripts_dir", Input).value.strip()
-                if scripts_dir:
-                    tools_data["scripts_dir"] = scripts_dir
+                try:
+                    cluster_list = self.query_one(
+                        "#cluster_packages_list", SelectionList
+                    )
+                    cluster_packages = [str(item) for item in cluster_list.selected]
+                    if cluster_packages:
+                        tools_data["cluster_packages"] = cluster_packages
+                except Exception:
+                    pass
 
                 # Only update tools section if we have data to add
                 if tools_data:
@@ -1013,6 +1606,23 @@ class BAApp(App[dict[str, object] | None]):
                     manifest_data["tools"].update(tools_data)
             except Exception:
                 pass  # Skip if tools fields not found
+
+            # Collect method data
+            try:
+                method_path = self.query_one("#method_path", Input).value.strip()
+                if method_path:
+                    manifest_data["method"] = {
+                        "file_path": method_path,
+                        "template_used": self._method_template_used,
+                    }
+            except Exception:
+                pass
+
+            # Collect hardware profiles
+            if self._hardware_profiles:
+                manifest_data["hardware_profiles"] = self._hardware_profiles
+            else:
+                manifest_data.pop("hardware_profiles", None)
 
             # Save the updated manifest
             ensure_directories(self._project_root)
@@ -1143,6 +1753,8 @@ class BAApp(App[dict[str, object] | None]):
             input_widget.value = path
             self._refresh_init_validation()
             self._refresh_sync_button_state()
+            if self._browse_target == "method_path":
+                self._load_method_preview()
         except Exception:
             pass
         self._browse_target = None
@@ -1279,14 +1891,34 @@ class BAApp(App[dict[str, object] | None]):
         endpoint_select = self.query_one("#data_endpoint", Select)
         locally_mounted = self.query_one("#locally_mounted", Checkbox)
         format_select = self.query_one("#data_format", Select)
+        data_endpoint_custom = ""
+        data_format_custom = ""
         data_description = ""
         data_size = ""
         data_size_unit = "gb"
+        modality_custom = ""
+        environment_custom = ""
         data_compressed = False
         data_uncompressed_size = ""
         data_uncompressed_unit = "gb"
         try:
+            data_endpoint_custom = self.query_one("#data_endpoint_custom", Input).value
+        except Exception:
+            pass
+        try:
+            data_format_custom = self.query_one("#data_format_custom", Input).value
+        except Exception:
+            pass
+        try:
             data_description = self.query_one("#data_description", Input).value
+        except Exception:
+            pass
+        try:
+            modality_custom = self.query_one("#modality_custom", Input).value
+        except Exception:
+            pass
+        try:
+            environment_custom = self.query_one("#environment_custom", Input).value
         except Exception:
             pass
         try:
@@ -1315,25 +1947,33 @@ class BAApp(App[dict[str, object] | None]):
                 data_uncompressed_unit = str(unit_value)
         except Exception:
             pass
+        endpoint_value = str(endpoint_select.value) if endpoint_select.value else ""
+        if endpoint_value.lower() == "other":
+            endpoint_value = data_endpoint_custom.strip()
+        format_value = ""
+        if format_select.value is not Select.BLANK:
+            format_value = str(format_select.value)
+        if format_value.lower() == "other":
+            format_value = data_format_custom.strip()
         return {
             "project_name": self.query_one("#project_name", Input).value,
             "analyst": self.query_one("#analyst", Input).value,
             "data_enabled": data_enabled.value,
-            "data_endpoint": str(endpoint_select.value)
-            if endpoint_select.value
-            else "",
+            "data_endpoint": endpoint_value,
             "data_source": self.query_one("#data_source", Input).value,
             "data_local": self.query_one("#data_local", Input).value,
-            "data_format": str(format_select.value)
-            if format_select.value is not Select.BLANK
-            else "",
+            "data_format": format_value,
             "locally_mounted": locally_mounted.value,
+            "data_endpoint_custom": data_endpoint_custom,
+            "data_format_custom": data_format_custom,
             "data_description": data_description,
             "data_size_gb": data_size,
             "data_size_unit": data_size_unit,
             "data_compressed": data_compressed,
             "data_uncompressed_size_gb": data_uncompressed_size,
             "data_uncompressed_size_unit": data_uncompressed_unit,
+            "modality_custom": modality_custom,
+            "environment_custom": environment_custom,
         }
 
     def _refresh_init_validation(self) -> None:
@@ -1465,6 +2105,64 @@ class BAApp(App[dict[str, object] | None]):
             suggestions.clear_options()
             self._active_path_input = None
             self._path_suggestions_visible = False
+        except Exception:
+            pass
+
+    def _update_method_path_suggestions(
+        self, input_id: str, current_value: str
+    ) -> None:
+        """Update method path suggestions dropdown."""
+        try:
+            suggestions = self._method_path_suggestions or self.query_one(
+                "#method_path_suggestions", OptionList
+            )
+            suggestions.clear_options()
+
+            if not current_value:
+                self._hide_method_path_suggestions()
+                return
+
+            path = Path(current_value).expanduser()
+            if path.is_dir():
+                search_dir = path
+                prefix = ""
+            else:
+                search_dir = path.parent
+                prefix = path.name.lower()
+
+            if not search_dir.exists():
+                self._hide_method_path_suggestions()
+                return
+
+            entries = []
+            for entry in search_dir.iterdir():
+                name = entry.name
+                if prefix and not name.lower().startswith(prefix):
+                    continue
+                entries.append(str(entry))
+            entries = sorted(entries)[:10]
+
+            if entries:
+                for entry in entries:
+                    suggestions.add_option(Option(entry))
+                suggestions.add_class("visible")
+                self._method_path_suggestions_visible = True
+                self._active_method_input = input_id
+            else:
+                self._hide_method_path_suggestions()
+        except Exception:
+            self._hide_method_path_suggestions()
+
+    def _hide_method_path_suggestions(self) -> None:
+        """Hide the method path suggestions dropdown."""
+        try:
+            suggestions = self._method_path_suggestions or self.query_one(
+                "#method_path_suggestions", OptionList
+            )
+            suggestions.remove_class("visible")
+            suggestions.clear_options()
+            self._active_method_input = None
+            self._method_path_suggestions_visible = False
         except Exception:
             pass
 
@@ -1642,6 +2340,88 @@ class BAApp(App[dict[str, object] | None]):
             self._populate_collaborators_table()
         except Exception:
             pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Channel Table Methods
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _populate_channels_table(self) -> None:
+        """Populate the DataTable with channel data."""
+        try:
+            table = self.query_one("#channels_table", DataTable)
+            if not table.columns:
+                table.add_column("Name", width=15)
+                table.add_column("Fluorophore", width=15)
+                table.add_column("Ex (nm)", width=10)
+                table.add_column("Em (nm)", width=10)
+            table.clear()
+            for idx, row in enumerate(self._channel_rows):
+                table.add_row(
+                    row.get("name", ""),
+                    row.get("fluorophore", ""),
+                    row.get("excitation_nm", ""),
+                    row.get("emission_nm", ""),
+                    key=str(idx),
+                )
+        except Exception:
+            pass
+
+    def action_add_channel_row(self) -> None:
+        """Action to add a new channel row."""
+        tabbed = self.query_one("#tabs", TabbedContent)
+        if tabbed.active != "science":
+            return
+        self.push_screen(ChannelModal(), self._handle_new_channel)
+
+    def _handle_new_channel(self, data: dict[str, str] | None) -> None:
+        """Add new channel after modal close."""
+        if data:
+            self._channel_rows.append(data)
+            self._populate_channels_table()
+
+    def action_remove_channel_row(self) -> None:
+        """Action to remove the selected channel row."""
+        try:
+            table = self.query_one("#channels_table", DataTable)
+            if not table.has_focus:
+                return
+            if table.cursor_row is None:
+                return
+            idx = table.cursor_row
+            if 0 <= idx < len(self._channel_rows):
+                self._channel_rows.pop(idx)
+            self._populate_channels_table()
+            if self._channel_rows:
+                idx = min(idx, len(self._channel_rows) - 1)
+                table.move_cursor(row=idx, column=0)
+        except Exception:
+            pass
+
+    def _handle_edit_channel(self, idx: int, data: dict[str, str] | None) -> None:
+        """Update channel data after modal close."""
+        if data and 0 <= idx < len(self._channel_rows):
+            self._channel_rows[idx] = data
+            self._populate_channels_table()
+
+    def _collect_channels(self) -> list[dict[str, object]]:
+        """Collect channel data for saving."""
+        channels = []
+        for row in self._channel_rows:
+            name = row.get("name", "").strip()
+            if not name:
+                continue
+            channel: dict[str, object] = {"name": name}
+            fluorophore = row.get("fluorophore", "").strip()
+            if fluorophore:
+                channel["fluorophore"] = fluorophore
+            ex_nm = row.get("excitation_nm", "").strip()
+            if ex_nm and ex_nm.isdigit():
+                channel["excitation_nm"] = int(ex_nm)
+            em_nm = row.get("emission_nm", "").strip()
+            if em_nm and em_nm.isdigit():
+                channel["emission_nm"] = int(em_nm)
+            channels.append(channel)
+        return channels
 
     def _submit_init(self) -> None:
         if self._mode not in ("init", "menu", "both"):

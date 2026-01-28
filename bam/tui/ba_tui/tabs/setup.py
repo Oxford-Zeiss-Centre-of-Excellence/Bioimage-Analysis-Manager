@@ -28,7 +28,7 @@ def compose_setup_tab(app: object) -> ComposeResult:
             # Project Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("Project", id="setup_project"):
-                with Vertical(id="project_form"):
+                with VerticalScroll(id="project_form"):
                     yield Static("Project Metadata", classes="section-header")
                     with Horizontal(classes="form-row"):
                         yield Label("Name*:")
@@ -61,7 +61,7 @@ def compose_setup_tab(app: object) -> ComposeResult:
             # People Section
             # ─────────────────────────────────────────────────────────────
             with TabPane("People", id="setup_people"):
-                with Vertical(id="people_form"):
+                with VerticalScroll(id="people_form"):
                     yield Static("Team Members", classes="section-header")
                     with Horizontal(classes="form-row"):
                         yield Label("Analyst*:")
@@ -102,6 +102,22 @@ def compose_setup_tab(app: object) -> ComposeResult:
                                 "Locally Mounted",
                                 app._defaults.get("locally_mounted", False),
                                 id="locally_mounted",
+                            )
+                        with Horizontal(
+                            classes="form-row"
+                            + (
+                                ""
+                                if app._defaults.get("data_endpoint", "").lower()
+                                == "other"
+                                else " hidden"
+                            ),
+                            id="data_endpoint_other_row",
+                        ):
+                            yield Label("Custom endpoint:")
+                            yield Input(
+                                app._defaults.get("data_endpoint_custom", ""),
+                                placeholder="Enter endpoint",
+                                id="data_endpoint_custom",
                             )
 
                         with Horizontal(classes="form-row"):
@@ -145,7 +161,7 @@ def compose_setup_tab(app: object) -> ComposeResult:
                                 id="data_description",
                             )
                         with Horizontal(classes="form-row"):
-                            yield Label("Format:")
+                            yield Label("File Format:")
                             yield Select(
                                 [
                                     ("TIFF", "tiff"),
@@ -159,6 +175,22 @@ def compose_setup_tab(app: object) -> ComposeResult:
                                 value=app._defaults.get("data_format", Select.BLANK),
                                 allow_blank=True,
                                 id="data_format",
+                            )
+                        with Horizontal(
+                            classes="form-row"
+                            + (
+                                ""
+                                if app._defaults.get("data_format", "").lower()
+                                == "other"
+                                else " hidden"
+                            ),
+                            id="data_format_other_row",
+                        ):
+                            yield Label("Custom format:")
+                            yield Input(
+                                app._defaults.get("data_format_custom", ""),
+                                placeholder="Enter format",
+                                id="data_format_custom",
                             )
                         with Horizontal(classes="form-row"):
                             yield Label("Raw Size:")
