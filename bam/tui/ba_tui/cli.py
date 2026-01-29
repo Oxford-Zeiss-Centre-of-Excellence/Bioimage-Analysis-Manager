@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from .io import dump_manifest, load_manifest
-from .models import ManifestValidationError, TaskStatus, build_manifest
+from .models import (
+    Dataset,
+    Manifest,
+    ManifestValidationError,
+    TaskStatus,
+    build_manifest,
+)
 from .scaffold import (
     create_idea_file,
     ensure_data_symlink,
@@ -47,10 +53,9 @@ def load_prefill(path: str | None) -> dict[str, object]:
         "project_name": str(data.get("project_name", "")),
         "analyst": str(data.get("analyst", "")),
         "data_enabled": bool(data.get("data_enabled", True)),
-        "data_endpoint": str(data.get("data_endpoint", "")),
-        "data_source": str(data.get("data_source", "")),
-        "data_local": str(data.get("data_local", "")),
-        "locally_mounted": bool(data.get("locally_mounted", False)),
+        "datasets": data.get("datasets", [])
+        if isinstance(data.get("datasets"), list)
+        else [],
     }
 
 
@@ -62,28 +67,11 @@ def run_init(args: argparse.Namespace) -> int:
         defaults["project_name"] = existing_manifest.project.name
         if existing_manifest.people:
             defaults["analyst"] = existing_manifest.people.analyst
-        if existing_manifest.data:
-            defaults["data_enabled"] = existing_manifest.data.enabled
-            defaults["data_endpoint"] = existing_manifest.data.endpoint or ""
-            defaults["data_source"] = str(existing_manifest.data.source or "")
-            defaults["data_local"] = str(existing_manifest.data.local or "")
-            defaults["locally_mounted"] = existing_manifest.data.locally_mounted
-            if existing_manifest.data.description:
-                defaults["data_description"] = existing_manifest.data.description
-            if existing_manifest.data.raw_size_gb is not None:
-                defaults["data_size_gb"] = str(existing_manifest.data.raw_size_gb)
-            if existing_manifest.data.raw_size_unit:
-                defaults["data_size_unit"] = existing_manifest.data.raw_size_unit
-            if existing_manifest.data.compressed is not None:
-                defaults["data_compressed"] = existing_manifest.data.compressed
-            if existing_manifest.data.uncompressed_size_gb is not None:
-                defaults["data_uncompressed_size_gb"] = str(
-                    existing_manifest.data.uncompressed_size_gb
-                )
-            if existing_manifest.data.uncompressed_size_unit:
-                defaults["data_uncompressed_size_unit"] = (
-                    existing_manifest.data.uncompressed_size_unit
-                )
+        if existing_manifest.datasets:
+            defaults["data_enabled"] = True
+            defaults["datasets"] = [d.to_dict() for d in existing_manifest.datasets]
+        else:
+            defaults["data_enabled"] = False
     app = BAApp(
         mode="init",
         recent_entries=[],
@@ -91,10 +79,6 @@ def run_init(args: argparse.Namespace) -> int:
         project_name=str(defaults.get("project_name", "")),
         analyst=str(defaults.get("analyst", "")),
         data_enabled=bool(defaults.get("data_enabled", True)),
-        data_endpoint=str(defaults.get("data_endpoint", "")),
-        data_source=str(defaults.get("data_source", "")),
-        data_local=str(defaults.get("data_local", "")),
-        locally_mounted=bool(defaults.get("locally_mounted", False)),
         initial_data=defaults,
     )
     result = app.run()
@@ -103,15 +87,18 @@ def run_init(args: argparse.Namespace) -> int:
         return 1
 
     try:
+        result_data = result.get("data")
+        if not isinstance(result_data, dict):
+            emit({"status": "error", "message": "Invalid init response."})
+            return 1
         manifest = build_manifest(
-            project_name=result["data"]["project_name"],
-            analyst=result["data"]["analyst"],
-            data_enabled=result["data"].get("data_enabled", True),
-            data_endpoint=result["data"].get("data_endpoint", ""),
-            data_source=result["data"].get("data_source", ""),
-            data_local=result["data"].get("data_local", ""),
-            data_format=result["data"].get("data_format", ""),
-            locally_mounted=result["data"].get("locally_mounted", False),
+            project_name=str(result_data.get("project_name", "")),
+            analyst=str(result_data.get("analyst", "")),
+            datasets=[
+                Dataset.from_dict(item)
+                for item in result_data.get("datasets", [])
+                if isinstance(item, dict)
+            ],
         )
     except ManifestValidationError as exc:
         emit({"status": "error", "message": str(exc), "errors": exc.errors})
@@ -124,8 +111,10 @@ def run_init(args: argparse.Namespace) -> int:
     dump_manifest(manifest_path, manifest)
 
     warning = None
-    if manifest.data and manifest.data.enabled and manifest.data.local:
-        warning = ensure_data_symlink(project_root, manifest.data.local)
+    if manifest.datasets:
+        first = manifest.datasets[0]
+        if first.local:
+            warning = ensure_data_symlink(project_root, first.local)
 
     emit(
         {
@@ -250,7 +239,8 @@ def run_log(args: argparse.Namespace) -> int:
         return 1
 
     entries = result.get("entries", [])
-    worklog.entries = entries
+    if isinstance(entries, list):
+        worklog.entries = entries
     save_worklog(project_root, worklog)
     emit(
         {
@@ -274,7 +264,10 @@ def run_idea(args: argparse.Namespace) -> int:
     if result is None or result.get("action") != "idea":
         emit({"status": "cancelled"})
         return 1
-    data = result["data"]
+    data = result.get("data")
+    if not isinstance(data, dict):
+        emit({"status": "error", "message": "Invalid idea response."})
+        return 1
     idea_path = create_idea_file(
         project_root,
         title=data.get("title", ""),
@@ -329,8 +322,9 @@ def run_artifact(args: argparse.Namespace) -> int:
         return 1
 
     updated = result.get("artifacts", [])
-    manifest.artifacts = updated
-    dump_manifest(manifest_path, manifest)
+    if isinstance(updated, list):
+        manifest.artifacts = updated
+        dump_manifest(manifest_path, manifest)
     emit(
         {
             "status": "ok",
@@ -358,7 +352,10 @@ def run_manifest(args: argparse.Namespace) -> int:
     if result is None or result.get("action") != "manifest":
         emit({"status": "cancelled"})
         return 1
-    manifest = result["manifest"]
+    manifest = result.get("manifest")
+    if not isinstance(manifest, Manifest):
+        emit({"status": "error", "message": "Invalid manifest response."})
+        return 1
     dump_manifest(manifest_path, manifest)
     emit(
         {
@@ -384,67 +381,9 @@ def run_menu(args: argparse.Namespace) -> int:
             if manifest.project and hasattr(manifest.project, "status")
             else "active",
             "analyst": manifest.people.analyst if manifest.people else "",
-            "data_enabled": manifest.data.enabled if manifest.data else True,
-            "data_endpoint": manifest.data.endpoint
-            if manifest.data and manifest.data.endpoint
-            else "",
-            "data_source": str(manifest.data.source)
-            if manifest.data and manifest.data.source
-            else "",
-            "data_local": str(manifest.data.local)
-            if manifest.data and manifest.data.local
-            else "",
-            "locally_mounted": manifest.data.locally_mounted
-            if manifest.data
-            else False,
+            "data_enabled": bool(manifest.datasets),
+            "datasets": [d.to_dict() for d in manifest.datasets],
         }
-        if manifest.data and manifest.data.endpoint:
-            endpoint_value = manifest.data.endpoint
-            known_endpoints = {
-                "Local",
-                "I Drive",
-                "MSD CEPH",
-                "RFS",
-                "HDD1",
-                "Other",
-            }
-            if endpoint_value in known_endpoints:
-                defaults["data_endpoint"] = endpoint_value
-            else:
-                defaults["data_endpoint"] = "Other"
-                defaults["data_endpoint_custom"] = endpoint_value
-        if manifest.data and manifest.data.format:
-            format_value = manifest.data.format
-            known_formats = {
-                "tiff",
-                "zarr",
-                "hdf5",
-                "nd2",
-                "czi",
-                "ome-tiff",
-                "other",
-            }
-            if format_value.lower() in known_formats:
-                defaults["data_format"] = format_value
-            else:
-                defaults["data_format"] = "other"
-                defaults["data_format_custom"] = format_value
-        if manifest.data and manifest.data.description:
-            defaults["data_description"] = manifest.data.description
-        if manifest.data and manifest.data.raw_size_gb is not None:
-            defaults["data_size_gb"] = str(manifest.data.raw_size_gb)
-        if manifest.data and manifest.data.raw_size_unit:
-            defaults["data_size_unit"] = manifest.data.raw_size_unit
-        if manifest.data and manifest.data.compressed is not None:
-            defaults["data_compressed"] = manifest.data.compressed
-        if manifest.data and manifest.data.uncompressed_size_gb is not None:
-            defaults["data_uncompressed_size_gb"] = str(
-                manifest.data.uncompressed_size_gb
-            )
-        if manifest.data and manifest.data.uncompressed_size_unit:
-            defaults["data_uncompressed_size_unit"] = (
-                manifest.data.uncompressed_size_unit
-            )
         # Add tags
         if manifest.tags:
             defaults["tags"] = ", ".join(manifest.tags)
@@ -461,55 +400,43 @@ def run_menu(args: argparse.Namespace) -> int:
                 for c in manifest.people.collaborators
             ]
 
-        # Add acquisition fields
-        if manifest.acquisition:
-            if manifest.acquisition.microscope:
-                defaults["microscope"] = manifest.acquisition.microscope
-            if manifest.acquisition.modality:
-                modality_value = manifest.acquisition.modality
-                known_modalities = {
-                    "confocal",
-                    "widefield",
-                    "light-sheet",
-                    "two-photon",
-                    "super-resolution",
-                    "em",
-                    "brightfield",
-                    "phase-contrast",
-                    "dic",
-                    "other",
+        # Add acquisition sessions
+        if manifest.acquisition and manifest.acquisition.sessions:
+            defaults["acquisition_sessions"] = [
+                {
+                    "imaging_date": session.imaging_date,
+                    "microscope": session.microscope,
+                    "modality": session.modality,
+                    "objective": session.objective,
+                    "voxel_x": str(session.voxel_size.x_um)
+                    if session.voxel_size and session.voxel_size.x_um
+                    else "",
+                    "voxel_y": str(session.voxel_size.y_um)
+                    if session.voxel_size and session.voxel_size.y_um
+                    else "",
+                    "voxel_z": str(session.voxel_size.z_um)
+                    if session.voxel_size and session.voxel_size.z_um
+                    else "",
+                    "time_interval_s": str(session.time_interval_s)
+                    if session.time_interval_s
+                    else "",
+                    "notes": session.notes,
+                    "channels": [
+                        {
+                            "name": ch.name,
+                            "fluorophore": ch.fluorophore or "",
+                            "excitation_nm": str(ch.excitation_nm)
+                            if ch.excitation_nm
+                            else "",
+                            "emission_nm": str(ch.emission_nm)
+                            if ch.emission_nm
+                            else "",
+                        }
+                        for ch in session.channels
+                    ],
                 }
-                if modality_value in known_modalities:
-                    defaults["modality"] = modality_value
-                else:
-                    defaults["modality"] = "other"
-                    defaults["modality_custom"] = modality_value
-            if manifest.acquisition.objective:
-                defaults["objective"] = manifest.acquisition.objective
-            if manifest.acquisition.channels:
-                defaults["channels"] = [
-                    {
-                        "name": ch.name,
-                        "fluorophore": ch.fluorophore or "",
-                        "excitation_nm": str(ch.excitation_nm)
-                        if ch.excitation_nm
-                        else "",
-                        "emission_nm": str(ch.emission_nm) if ch.emission_nm else "",
-                    }
-                    for ch in manifest.acquisition.channels
-                ]
-            if manifest.acquisition.voxel_size:
-                vs = manifest.acquisition.voxel_size
-                if vs.x_um:
-                    defaults["voxel_x"] = str(vs.x_um)
-                if vs.y_um:
-                    defaults["voxel_y"] = str(vs.y_um)
-                if vs.z_um:
-                    defaults["voxel_z"] = str(vs.z_um)
-            if manifest.acquisition.time_interval_s:
-                defaults["time_interval"] = str(manifest.acquisition.time_interval_s)
-            if manifest.acquisition.notes:
-                defaults["acquisition_notes"] = manifest.acquisition.notes
+                for session in manifest.acquisition.sessions
+            ]
 
         # Add tools fields
         if manifest.tools:
@@ -561,6 +488,34 @@ def run_menu(args: argparse.Namespace) -> int:
                 }
                 for profile in manifest.hardware_profiles
             ]
+        # Add billing fields
+        if manifest.billing:
+            if manifest.billing.fund_code:
+                defaults["fund_code"] = manifest.billing.fund_code
+            if manifest.billing.hourly_rate is not None:
+                defaults["hourly_rate"] = str(manifest.billing.hourly_rate)
+            if manifest.billing.budget_hours is not None:
+                defaults["budget_hours"] = str(manifest.billing.budget_hours)
+            if manifest.billing.spent_hours is not None:
+                defaults["spent_hours"] = str(manifest.billing.spent_hours)
+            if manifest.billing.start_date:
+                defaults["billing_start_date"] = manifest.billing.start_date
+            if manifest.billing.end_date:
+                defaults["billing_end_date"] = manifest.billing.end_date
+            if manifest.billing.notes:
+                defaults["billing_notes"] = manifest.billing.notes
+        # Add timeline/milestones
+        if manifest.timeline and manifest.timeline.milestones:
+            defaults["milestones"] = [
+                {
+                    "name": m.name,
+                    "target_date": m.target_date,
+                    "actual_date": m.actual_date,
+                    "status": m.status,
+                    "notes": getattr(m, "notes", ""),
+                }
+                for m in manifest.timeline.milestones
+            ]
     app = BAApp(
         mode="menu",
         recent_entries=recent,
@@ -569,10 +524,6 @@ def run_menu(args: argparse.Namespace) -> int:
         project_name=str(defaults.get("project_name", "")),
         analyst=str(defaults.get("analyst", "")),
         data_enabled=bool(defaults.get("data_enabled", True)),
-        data_endpoint=str(defaults.get("data_endpoint", "")),
-        data_source=str(defaults.get("data_source", "")),
-        data_local=str(defaults.get("data_local", "")),
-        locally_mounted=bool(defaults.get("locally_mounted", False)),
         initial_data=defaults,
     )
     result = app.run()
@@ -584,15 +535,18 @@ def run_menu(args: argparse.Namespace) -> int:
     # Handle init action directly (TUI already collected data)
     if result.get("action") == "init":
         try:
+            result_data = result.get("data")
+            if not isinstance(result_data, dict):
+                emit({"status": "error", "message": "Invalid init response."})
+                return 1
             manifest = build_manifest(
-                project_name=result["data"]["project_name"],
-                analyst=result["data"]["analyst"],
-                data_enabled=result["data"].get("data_enabled", True),
-                data_endpoint=result["data"].get("data_endpoint", ""),
-                data_source=result["data"].get("data_source", ""),
-                data_local=result["data"].get("data_local", ""),
-                data_format=result["data"].get("data_format", ""),
-                locally_mounted=result["data"].get("locally_mounted", False),
+                project_name=str(result_data.get("project_name", "")),
+                analyst=str(result_data.get("analyst", "")),
+                datasets=[
+                    Dataset.from_dict(item)
+                    for item in result_data.get("datasets", [])
+                    if isinstance(item, dict)
+                ],
             )
         except ManifestValidationError as exc:
             emit({"status": "error", "message": str(exc), "errors": exc.errors})
@@ -603,8 +557,10 @@ def run_menu(args: argparse.Namespace) -> int:
         manifest_path = project_root / "manifest.yaml"
         dump_manifest(manifest_path, manifest)
         warning = None
-        if manifest.data and manifest.data.enabled and manifest.data.local:
-            warning = ensure_data_symlink(project_root, manifest.data.local)
+        if manifest.datasets:
+            first = manifest.datasets[0]
+            if first.local:
+                warning = ensure_data_symlink(project_root, first.local)
 
         emit(
             {
@@ -619,7 +575,9 @@ def run_menu(args: argparse.Namespace) -> int:
     # Handle log action directly
     elif result.get("action") == "log":
         worklog = load_worklog(project_root)
-        worklog.entries = result.get("entries", worklog.entries)
+        entries = result.get("entries", worklog.entries)
+        if isinstance(entries, list):
+            worklog.entries = entries
         save_worklog(project_root, worklog)
         emit(
             {
@@ -631,7 +589,10 @@ def run_menu(args: argparse.Namespace) -> int:
         return 0
 
     elif result.get("action") == "idea":
-        data = result["data"]
+        data = result.get("data")
+        if not isinstance(data, dict):
+            emit({"status": "error", "message": "Invalid idea response."})
+            return 1
         idea_path = create_idea_file(
             project_root,
             title=data.get("title", ""),
@@ -652,8 +613,10 @@ def run_menu(args: argparse.Namespace) -> int:
         if manifest is None:
             emit({"status": "error", "message": "manifest.yaml not found."})
             return 1
-        manifest.artifacts = result.get("artifacts", [])
-        dump_manifest(project_root / "manifest.yaml", manifest)
+        updated = result.get("artifacts", [])
+        if isinstance(updated, list):
+            manifest.artifacts = updated
+            dump_manifest(project_root / "manifest.yaml", manifest)
         emit(
             {
                 "status": "ok",
@@ -667,7 +630,11 @@ def run_menu(args: argparse.Namespace) -> int:
         if manifest is None:
             emit({"status": "error", "message": "manifest.yaml not found."})
             return 1
-        dump_manifest(project_root / "manifest.yaml", result["manifest"])
+        updated_manifest = result.get("manifest")
+        if not isinstance(updated_manifest, Manifest):
+            emit({"status": "error", "message": "Invalid manifest response."})
+            return 1
+        dump_manifest(project_root / "manifest.yaml", updated_manifest)
         emit(
             {
                 "status": "ok",
@@ -724,7 +691,7 @@ Examples:
     init_parser.add_argument(
         "--prefill",
         metavar="FILE",
-        help="JSON file with prefill data (project_name, analyst, data_source, data_local)",
+        help="JSON file with prefill data (project_name, analyst, datasets)",
     )
     init_parser.set_defaults(func=run_init)
 

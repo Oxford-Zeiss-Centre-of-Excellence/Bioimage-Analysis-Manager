@@ -229,9 +229,9 @@ class People(BaseModel):
         return "\n".join(c.to_pipe_string() for c in self.collaborators)
 
 
-class DataConfig(BaseModel):
-    enabled: bool = True  # Whether project requires external data
-    endpoint: Optional[str] = None  # Label like "I Drive", "MSD CEPH", etc.
+class Dataset(BaseModel):
+    name: str
+    endpoint: Optional[str] = None
     source: Optional[Path] = None
     local: Optional[Path] = None
     locally_mounted: bool = False
@@ -242,6 +242,63 @@ class DataConfig(BaseModel):
     compressed: Optional[bool] = None
     uncompressed_size_gb: Optional[float] = None
     uncompressed_size_unit: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Dataset":
+        raw_size = data.get("raw_size_gb")
+        if raw_size in (None, ""):
+            raw_size_value = None
+        else:
+            raw_size_value = float(raw_size)
+        uncompressed_size = data.get("uncompressed_size_gb")
+        if uncompressed_size in (None, ""):
+            uncompressed_value = None
+        else:
+            uncompressed_value = float(uncompressed_size)
+        return cls(
+            name=str(data.get("name", "")).strip(),
+            endpoint=str(data.get("endpoint", "")).strip() or None,
+            source=Path(data["source"]) if data.get("source") else None,
+            local=Path(data["local"]) if data.get("local") else None,
+            locally_mounted=bool(data.get("locally_mounted", False)),
+            description=str(data.get("description", "")).strip() or None,
+            format=str(data.get("format", "")).strip() or None,
+            raw_size_gb=raw_size_value,
+            raw_size_unit=str(data.get("raw_size_unit", "")).strip() or None,
+            compressed=bool(data.get("compressed"))
+            if data.get("compressed") is not None
+            else None,
+            uncompressed_size_gb=uncompressed_value,
+            uncompressed_size_unit=str(data.get("uncompressed_size_unit", "")).strip()
+            or None,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "name": self.name,
+            "locally_mounted": self.locally_mounted,
+        }
+        if self.endpoint:
+            payload["endpoint"] = self.endpoint
+        if self.source:
+            payload["source"] = str(self.source)
+        if self.local:
+            payload["local"] = str(self.local)
+        if self.description:
+            payload["description"] = self.description
+        if self.format:
+            payload["format"] = self.format
+        if self.raw_size_gb is not None:
+            payload["raw_size_gb"] = self.raw_size_gb
+        if self.raw_size_unit:
+            payload["raw_size_unit"] = self.raw_size_unit
+        if self.compressed is not None:
+            payload["compressed"] = self.compressed
+        if self.uncompressed_size_gb is not None:
+            payload["uncompressed_size_gb"] = self.uncompressed_size_gb
+        if self.uncompressed_size_unit:
+            payload["uncompressed_size_unit"] = self.uncompressed_size_unit
+        return payload
 
 
 class Artifact(BaseModel):
@@ -302,16 +359,66 @@ class VoxelSize(BaseModel):
     z_um: Optional[float] = None
 
 
-class Acquisition(BaseModel):
-    """Imaging parameters and metadata."""
+class AcquisitionSession(BaseModel):
+    """Single imaging session parameters."""
 
+    imaging_date: Optional[date] = None
     microscope: str = ""
     modality: str = ""  # confocal | widefield | lightsheet | EM | etc.
     objective: str = ""  # e.g., "40x/1.3 Oil"
-    channels: list[Channel] = Field(default_factory=list)
     voxel_size: Optional[VoxelSize] = None
     time_interval_s: Optional[float] = None
     notes: str = ""
+    channels: list[Channel] = Field(default_factory=list)
+
+
+class Acquisition(BaseModel):
+    """Imaging parameters and metadata."""
+
+    sessions: list[AcquisitionSession] = Field(default_factory=list)
+
+    # Legacy single-session fields (deprecated)
+    microscope: str = ""
+    modality: str = ""  # confocal | widefield | lightsheet | EM | etc.
+    objective: str = ""  # e.g., "40x/1.3 Oil"
+    voxel_size: Optional[VoxelSize] = None
+    time_interval_s: Optional[float] = None
+    notes: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_session(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if data.get("sessions"):
+            return data
+
+        has_legacy = any(
+            data.get(field)
+            for field in (
+                "imaging_date",
+                "microscope",
+                "modality",
+                "objective",
+                "voxel_size",
+                "time_interval_s",
+                "notes",
+            )
+        )
+        if has_legacy:
+            data["sessions"] = [
+                {
+                    "imaging_date": data.get("imaging_date"),
+                    "microscope": data.get("microscope", ""),
+                    "modality": data.get("modality", ""),
+                    "objective": data.get("objective", ""),
+                    "voxel_size": data.get("voxel_size"),
+                    "time_interval_s": data.get("time_interval_s"),
+                    "notes": data.get("notes", ""),
+                    "channels": data.get("channels", []),
+                }
+            ]
+        return data
 
     @classmethod
     def parse_channels_text(cls, text: str) -> list[Channel]:
@@ -488,14 +595,15 @@ class Archive(BaseModel):
 class Milestone(BaseModel):
     """A project milestone.
 
-    Text format (pipe-separated): name | target_date | actual_date | status
-    Example: Data acquisition | 2024-03-01 | 2024-03-05 | completed
+    Text format (pipe-separated): name | target_date | actual_date | status | notes
+    Example: Data acquisition | 2024-03-01 | 2024-03-05 | completed | Initial run
     """
 
     name: str
     target_date: Optional[date] = None
     actual_date: Optional[date] = None
-    status: str = "pending"  # pending | in-progress | completed | delayed
+    status: str = "pending"  # pending | in-progress | completed | delayed | cancelled
+    notes: str = ""
 
     @classmethod
     def from_pipe_string(cls, line: str) -> "Milestone":
@@ -518,34 +626,20 @@ class Milestone(BaseModel):
             target_date=target,
             actual_date=actual,
             status=parts[3] if len(parts) > 3 else "pending",
+            notes=parts[4] if len(parts) > 4 else "",
         )
 
     def to_pipe_string(self) -> str:
         """Convert to pipe-separated string."""
         t = self.target_date.isoformat() if self.target_date else ""
         a = self.actual_date.isoformat() if self.actual_date else ""
-        return f"{self.name} | {t} | {a} | {self.status}"
+        return f"{self.name} | {t} | {a} | {self.status} | {self.notes}"
 
 
 class Timeline(BaseModel):
     """Project milestones and deadlines."""
 
     milestones: list[Milestone] = Field(default_factory=list)
-    notes: str = ""
-
-    @classmethod
-    def parse_milestones_text(cls, text: str) -> list[Milestone]:
-        """Parse milestones from multiline text."""
-        milestones = []
-        for line in text.strip().split("\n"):
-            line = line.strip()
-            if line and not line.startswith("#"):
-                milestones.append(Milestone.from_pipe_string(line))
-        return milestones
-
-    def milestones_to_text(self) -> str:
-        """Convert milestones to multiline text."""
-        return "\n".join(m.to_pipe_string() for m in self.milestones)
 
 
 # =============================================================================
@@ -607,7 +701,7 @@ class Manifest(BaseModel):
 
     project: Project
     people: Optional[People] = None
-    data: Optional[DataConfig] = None
+    datasets: list[Dataset] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     acquisition: Optional[Acquisition] = None
     tools: Optional[Tools] = None
@@ -635,6 +729,73 @@ class Manifest(BaseModel):
                 # Already in correct format, pydantic will handle it
                 pass
 
+        if "data" in data and "datasets" not in data:
+            legacy = data.get("data")
+            datasets: list[dict[str, Any]] = []
+            if isinstance(legacy, dict):
+                enabled = bool(legacy.get("enabled", True))
+                if enabled:
+                    has_fields = any(
+                        legacy.get(key)
+                        for key in (
+                            "endpoint",
+                            "source",
+                            "local",
+                            "description",
+                            "format",
+                            "raw_size_gb",
+                            "raw_size_unit",
+                            "compressed",
+                            "uncompressed_size_gb",
+                            "uncompressed_size_unit",
+                        )
+                    )
+                    if has_fields:
+                        dataset = {
+                            "name": "dataset-1",
+                            "endpoint": legacy.get("endpoint"),
+                            "source": legacy.get("source"),
+                            "local": legacy.get("local"),
+                            "locally_mounted": legacy.get("locally_mounted", False),
+                            "description": legacy.get("description"),
+                            "format": legacy.get("format"),
+                            "raw_size_gb": legacy.get("raw_size_gb"),
+                            "raw_size_unit": legacy.get("raw_size_unit"),
+                            "compressed": legacy.get("compressed"),
+                            "uncompressed_size_gb": legacy.get("uncompressed_size_gb"),
+                            "uncompressed_size_unit": legacy.get(
+                                "uncompressed_size_unit"
+                            ),
+                        }
+                        datasets.append(dataset)
+            data["datasets"] = datasets
+            data.pop("data", None)
+
+        timeline = data.get("timeline")
+        if isinstance(timeline, dict):
+            timeline.pop("notes", None)
+            milestones = timeline.get("milestones")
+            if isinstance(milestones, list):
+                for milestone in milestones:
+                    if not isinstance(milestone, dict):
+                        continue
+                    for field in ("target_date", "actual_date"):
+                        value = milestone.get(field)
+                        if value is None:
+                            continue
+                        if isinstance(value, date):
+                            continue
+                        date_method = getattr(value, "date", None)
+                        if callable(date_method):
+                            try:
+                                coerced = date_method()
+                                if isinstance(coerced, date):
+                                    milestone[field] = coerced
+                                else:
+                                    milestone[field] = None
+                            except Exception:
+                                milestone[field] = None
+
         return data
 
 
@@ -642,6 +803,7 @@ def build_manifest(
     *,
     project_name: str,
     analyst: str,
+    datasets: Optional[list[Dataset]] = None,
     data_enabled: bool = True,
     data_endpoint: str = "",
     data_source: str = "",
@@ -649,19 +811,25 @@ def build_manifest(
     data_format: str = "",
     locally_mounted: bool = False,
 ) -> Manifest:
+    final_datasets: list[Dataset] = []
+    if datasets is not None:
+        final_datasets = datasets
+    elif data_enabled and any([data_endpoint, data_source, data_local, data_format]):
+        final_datasets = [
+            Dataset(
+                name="dataset-1",
+                endpoint=data_endpoint.strip() if data_endpoint else None,
+                source=Path(data_source) if data_source else None,
+                local=Path(data_local) if data_local else None,
+                format=data_format.strip() if data_format else None,
+                locally_mounted=locally_mounted,
+            )
+        ]
+
     return Manifest(
         project=Project(name=project_name.strip()),
         people=People(analyst=analyst.strip()),
-        data=DataConfig(
-            enabled=data_enabled,
-            endpoint=data_endpoint.strip() if data_endpoint else None,
-            source=Path(data_source) if data_source else None,
-            local=Path(data_local) if data_local else None,
-            format=data_format.strip() if data_format else None,
-            locally_mounted=locally_mounted,
-        )
-        if data_enabled
-        else DataConfig(enabled=False),
+        datasets=final_datasets,
     )
 
 

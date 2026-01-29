@@ -2,16 +2,35 @@
 
 from __future__ import annotations
 
+from datetime import date
+
+import pendulum
+
 from textual.app import ComposeResult
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Center, Horizontal, VerticalScroll
 from textual.widgets import (
+    DataTable,
     Input,
     Label,
     Static,
     TabbedContent,
     TabPane,
     TextArea,
+    Button,
 )
+
+from ..widgets import DateSelect
+
+
+def _coerce_date(value: object) -> pendulum.DateTime | None:
+    if isinstance(value, date):
+        return pendulum.datetime(value.year, value.month, value.day)
+    if isinstance(value, str) and value:
+        try:
+            return pendulum.parse(value)
+        except (ValueError, pendulum.parsing.exceptions.ParserError):
+            return None
+    return None
 
 
 def compose_admin_tab(app: object) -> ComposeResult:
@@ -57,20 +76,26 @@ def compose_admin_tab(app: object) -> ComposeResult:
                         )
 
                     yield Static("Project Dates", classes="section-header")
-                    with Horizontal(classes="form-row"):
-                        yield Label("Start date:")
-                        yield Input(
-                            app._defaults.get("billing_start_date", ""),
-                            placeholder="YYYY-MM-DD",
-                            id="billing_start_date",
-                        )
-                    with Horizontal(classes="form-row"):
-                        yield Label("End date:")
-                        yield Input(
-                            app._defaults.get("billing_end_date", ""),
-                            placeholder="YYYY-MM-DD",
-                            id="billing_end_date",
-                        )
+                    with Horizontal(id="billing_dates_row"):
+                        with Horizontal(classes="form-row"):
+                            yield Label("Start date:")
+                            yield DateSelect(
+                                "#billing_datepicker_mount",
+                                date=_coerce_date(
+                                    app._defaults.get("billing_start_date", "")
+                                ),
+                                id="billing_start_date",
+                            )
+                        with Horizontal(classes="form-row"):
+                            yield Label("End date:")
+                            yield DateSelect(
+                                "#billing_datepicker_mount",
+                                date=_coerce_date(
+                                    app._defaults.get("billing_end_date", "")
+                                ),
+                                id="billing_end_date",
+                            )
+                    yield Static("", id="billing_datepicker_mount")
 
                     yield Static("Notes")
                     yield TextArea(
@@ -84,23 +109,19 @@ def compose_admin_tab(app: object) -> ComposeResult:
             with TabPane("Timeline", id="admin_timeline"):
                 with VerticalScroll(id="timeline_form"):
                     yield Static(
-                        "Milestones (one per line: name | target_date | actual_date | status)"
+                        "Milestones (Ctrl+A: Add, Enter: Edit, Ctrl+D: Remove)",
+                        classes="section-header",
                     )
-                    yield TextArea(
-                        app._defaults.get("milestones_text", ""),
-                        id="milestones_text",
-                    )
-                    yield Static(
-                        "Status: pending | in-progress | completed | delayed",
-                        classes="form-hint",
-                    )
-                    yield Static(
-                        "Example: Data acquisition | 2024-03-01 | 2024-03-05 | completed",
-                        classes="form-hint",
-                    )
-
-                    yield Static("Timeline Notes")
-                    yield TextArea(
-                        app._defaults.get("timeline_notes", ""),
-                        id="timeline_notes",
-                    )
+                    with Center():
+                        yield DataTable(id="milestones_table", cursor_type="row")
+                    with Horizontal(id="milestone_actions"):
+                        yield Button(
+                            "Add Milestone",
+                            id="add_milestone",
+                            variant="success",
+                        )
+                        yield Button(
+                            "Remove",
+                            id="remove_milestone",
+                            variant="error",
+                        )

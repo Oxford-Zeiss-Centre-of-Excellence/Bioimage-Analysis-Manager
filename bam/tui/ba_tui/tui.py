@@ -33,16 +33,23 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
+import pendulum
+
+from .widgets import DateSelect
+
 from .io import dump_manifest
-from .models import Artifact, LogEntry, Manifest, TaskStatus, build_manifest
+from .models import Artifact, Dataset, LogEntry, Manifest, TaskStatus, build_manifest
 from .scaffold import ensure_data_symlink, ensure_directories, ensure_worklog
 from .screens import (
+    AcquisitionSessionModal,
     ChannelModal,
     CollaboratorModal,
     CustomInputModal,
+    DatasetModal,
     DirectoryPickerScreen,
     ExitConfirmScreen,
     HardwareModal,
+    MilestoneModal,
     NewManifestConfirmScreen,
     ResetConfirmScreen,
 )
@@ -77,6 +84,20 @@ class BAApp(App[dict[str, object] | None]):
     # Default endpoint options (can be overridden via ~/.config/bam/endpoints.yaml)
     DEFAULT_ENDPOINTS = ["Local", "I Drive", "MSD CEPH", "RFS", "HDD1"]
     DEFAULT_ROLES = ["PI", "Students", "Others"]
+    DEFAULT_FORMATS = ["tiff", "zarr", "hdf5", "nd2", "czi", "ome-tiff", "other"]
+
+    @classmethod
+    def _load_dataset_format_options(cls) -> list[tuple[str, str]]:
+        options = []
+        for name in cls.DEFAULT_FORMATS:
+            if name == "ome-tiff":
+                label = "OME-TIFF"
+            elif name == "other":
+                label = "Other"
+            else:
+                label = name.upper()
+            options.append((label, name))
+        return options
 
     @classmethod
     def _load_endpoint_options(cls) -> list[tuple[str, str]]:
@@ -163,13 +184,20 @@ class BAApp(App[dict[str, object] | None]):
             "project_name": project_name,
             "analyst": analyst,
             "data_enabled": data_enabled,
-            "data_endpoint": data_endpoint,
-            "data_source": data_source,
-            "data_local": data_local,
-            "locally_mounted": locally_mounted,
         }
         if initial_data:
             self._defaults.update(initial_data)
+        else:
+            if any([data_endpoint, data_source, data_local]):
+                self._defaults["datasets"] = [
+                    {
+                        "name": "dataset-1",
+                        "endpoint": data_endpoint,
+                        "source": data_source,
+                        "local": data_local,
+                        "locally_mounted": locally_mounted,
+                    }
+                ]
         self._init_error: Optional[Static] = None
         self._log_error: Optional[Static] = None
         self._syncing = False
@@ -182,9 +210,6 @@ class BAApp(App[dict[str, object] | None]):
         self._selected_artifact_index: Optional[int] = None
         self._manifest_errors: Optional[Static] = None
         self._browse_target: Optional[str] = None
-        self._active_path_input: Optional[str] = None
-        self._path_suggestions_visible = False
-        self._path_suggestions: Optional[OptionList] = None
         self._active_method_input: Optional[str] = None
         self._method_path_suggestions_visible = False
         self._method_path_suggestions: Optional[OptionList] = None
@@ -196,6 +221,10 @@ class BAApp(App[dict[str, object] | None]):
         self._method_preview_mtime: float | None = None
         self._selected_hardware_index: Optional[int] = None
         self._collaborator_rows: list[dict[str, str]] = []
+        self._dataset_rows: list[dict[str, object]] = []
+        self._milestone_rows: list[dict[str, object]] = []
+        self._acquisition_rows: list[dict[str, object]] = []
+        self._selected_acquisition_index: Optional[int] = None
         if self._defaults.get("collaborators"):
             self._collaborator_rows = [
                 {
@@ -205,6 +234,53 @@ class BAApp(App[dict[str, object] | None]):
                     "affiliation": str(item.get("affiliation", "")),
                 }
                 for item in self._defaults.get("collaborators", [])
+            ]
+        if self._defaults.get("datasets"):
+            self._dataset_rows = [
+                {
+                    "name": str(item.get("name", "")),
+                    "endpoint": str(item.get("endpoint", "")),
+                    "source": str(item.get("source", "")),
+                    "local": str(item.get("local", "")),
+                    "locally_mounted": bool(item.get("locally_mounted", False)),
+                    "description": str(item.get("description", "")),
+                    "format": str(item.get("format", "")),
+                    "raw_size_gb": str(item.get("raw_size_gb", "")),
+                    "raw_size_unit": str(item.get("raw_size_unit", "gb")),
+                    "compressed": bool(item.get("compressed", False)),
+                    "uncompressed_size_gb": str(item.get("uncompressed_size_gb", "")),
+                    "uncompressed_size_unit": str(
+                        item.get("uncompressed_size_unit", "gb")
+                    ),
+                }
+                for item in self._defaults.get("datasets", [])
+            ]
+        if self._defaults.get("acquisition_sessions"):
+            self._acquisition_rows = [
+                {
+                    "imaging_date": item.get("imaging_date"),
+                    "microscope": str(item.get("microscope", "")),
+                    "modality": str(item.get("modality", "")),
+                    "objective": str(item.get("objective", "")),
+                    "voxel_x": str(item.get("voxel_x", "")),
+                    "voxel_y": str(item.get("voxel_y", "")),
+                    "voxel_z": str(item.get("voxel_z", "")),
+                    "time_interval_s": str(item.get("time_interval_s", "")),
+                    "notes": str(item.get("notes", "")),
+                    "channels": item.get("channels", []),
+                }
+                for item in self._defaults.get("acquisition_sessions", [])
+            ]
+        if self._defaults.get("milestones"):
+            self._milestone_rows = [
+                {
+                    "name": str(item.get("name", "")),
+                    "target_date": item.get("target_date"),
+                    "actual_date": item.get("actual_date"),
+                    "status": str(item.get("status", "pending")),
+                    "notes": str(item.get("notes", "")),
+                }
+                for item in self._defaults.get("milestones", [])
             ]
         if self._defaults.get("hardware_profiles"):
             self._hardware_profiles = [
@@ -266,21 +342,11 @@ class BAApp(App[dict[str, object] | None]):
                 self._apply_ui_state()
 
         self._refresh_init_validation()
-        self._refresh_sync_button_state()
         self._refresh_worklog_lists()
         self._refresh_artifact_list()
         self._load_manifest_sections()
         self.set_interval(1, self._tick_worklog)
         self.set_interval(1, self._poll_method_preview)
-
-        # Auto-check locally mounted if endpoint is Local
-        try:
-            endpoint_select = self.query_one("#data_endpoint", Select)
-            if endpoint_select.value == "Local":
-                checkbox = self.query_one("#locally_mounted", Checkbox)
-                checkbox.value = True
-        except Exception:
-            pass
 
         try:
             task_type_select = self.query_one("#task_type", Select)
@@ -293,11 +359,6 @@ class BAApp(App[dict[str, object] | None]):
             self._manifest_errors = self.query_one("#manifest_error", Static)
         except Exception:
             self._manifest_errors = None
-
-        try:
-            self._path_suggestions = self.query_one("#path_suggestions", OptionList)
-        except Exception:
-            self._path_suggestions = None
 
         try:
             self._method_path_suggestions = self.query_one(
@@ -318,7 +379,32 @@ class BAApp(App[dict[str, object] | None]):
             pass
 
         try:
+            self._populate_acquisition_table()
+        except Exception:
+            pass
+
+        try:
+            self._ensure_dataset_rows()
+        except Exception:
+            pass
+
+        try:
+            self._populate_datasets_table()
+        except Exception:
+            pass
+
+        try:
+            self._populate_milestones_table()
+        except Exception:
+            pass
+
+        try:
             self._populate_hardware_table()
+        except Exception:
+            pass
+
+        try:
+            self._populate_milestones_table()
         except Exception:
             pass
 
@@ -423,24 +509,40 @@ class BAApp(App[dict[str, object] | None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
-        if button_id == "sync_btn":
-            if not self._is_sync_disabled():
-                self._start_sync()
-        elif button_id == "browse_source":
-            # Only allow browse if locally mounted
-            try:
-                checkbox = self.query_one("#locally_mounted", Checkbox)
-                if checkbox.value:
-                    self._open_directory_picker("data_source")
-                else:
-                    self.notify(
-                        "Enable 'Locally Mounted' to browse source", severity="warning"
-                    )
-            except Exception:
-                self._open_directory_picker("data_source")
-        elif button_id == "browse_local":
-            self._open_directory_picker("data_local")
-        elif button_id == "browse_method":
+        if button_id == "add_collaborator":
+            self.action_add_collaborator_row()
+            return
+        if button_id == "remove_collaborator":
+            self.action_remove_collaborator_row()
+            return
+        if button_id == "add_dataset":
+            self.action_add_dataset()
+            return
+        if button_id == "remove_dataset":
+            self.action_remove_dataset()
+            return
+        if button_id == "sync_dataset":
+            self.action_sync_dataset()
+            return
+        if button_id == "add_acquisition":
+            self.action_add_acquisition()
+            return
+        if button_id == "remove_acquisition":
+            self.action_remove_acquisition()
+            return
+        if button_id == "add_channel":
+            self.action_add_channel_row()
+            return
+        if button_id == "remove_channel":
+            self.action_remove_channel_row()
+            return
+        if button_id == "add_milestone":
+            self.action_add_milestone()
+            return
+        if button_id == "remove_milestone":
+            self.action_remove_milestone()
+            return
+        if button_id == "browse_method":
             self._open_directory_picker("method_path")
         elif button_id == "method_template":
             self._create_method_template()
@@ -474,40 +576,16 @@ class BAApp(App[dict[str, object] | None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "message":
             self._submit_log()
-        elif event.input.id in ("project_name", "analyst", "data_source", "data_local"):
+        elif event.input.id in ("project_name", "analyst"):
             self._refresh_init_validation()
-            self._hide_path_suggestions()
         elif event.input.id == "method_path":
             self._hide_method_path_suggestions()
             self._load_method_preview()
             self._maybe_sync_method_path()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id in (
-            "project_name",
-            "analyst",
-            "data_source",
-            "data_local",
-            "data_size_gb",
-            "data_uncompressed_size_gb",
-        ):
+        if event.input.id in ("project_name", "analyst"):
             self._refresh_init_validation()
-            self._refresh_sync_button_state()
-        # Show path suggestions for path fields when locally mounted
-        if event.input.id in ("data_source", "data_local"):
-            try:
-                checkbox = self.query_one("#locally_mounted", Checkbox)
-                focused = self.focused
-                if (
-                    checkbox.value
-                    and focused is event.input
-                    and event.input.id in ("data_source", "data_local")
-                ):
-                    self._update_path_suggestions(event.input.id, event.value)
-                else:
-                    self._hide_path_suggestions()
-            except Exception:
-                pass
 
         if event.input.id == "method_path":
             try:
@@ -520,29 +598,8 @@ class BAApp(App[dict[str, object] | None]):
                 pass
             self._load_method_preview_if_exists(event.value)
 
-        if event.input.id == "data_size_gb":
-            cleaned = "".join(ch for ch in event.value if ch.isdigit() or ch == ".")
-            if cleaned != event.value:
-                event.input.value = cleaned
-        elif event.input.id == "data_uncompressed_size_gb":
-            cleaned = "".join(ch for ch in event.value if ch.isdigit() or ch == ".")
-            if cleaned != event.value:
-                event.input.value = cleaned
-
     def on_input_focused(self, event) -> None:
         input_id = getattr(event.input, "id", "")
-        if input_id in ("data_source", "data_local"):
-            try:
-                checkbox = self.query_one("#locally_mounted", Checkbox)
-                if checkbox.value:
-                    self._update_path_suggestions(input_id, event.input.value)
-                else:
-                    self._hide_path_suggestions()
-            except Exception:
-                pass
-        else:
-            self._hide_path_suggestions()
-
         if input_id == "method_path":
             try:
                 self._update_method_path_suggestions(input_id, event.input.value)
@@ -551,13 +608,6 @@ class BAApp(App[dict[str, object] | None]):
 
     def on_input_blurred(self, event) -> None:
         input_id = getattr(event.input, "id", "")
-        if input_id in ("data_source", "data_local"):
-            focused = self.focused
-            if self._path_suggestions and focused is self._path_suggestions:
-                return
-            if focused and getattr(focused, "id", "") == "path_suggestions":
-                return
-            self._hide_path_suggestions()
         if input_id == "method_path":
             focused = self.focused
             if (
@@ -570,36 +620,8 @@ class BAApp(App[dict[str, object] | None]):
             self._hide_method_path_suggestions()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if event.select.id == "data_endpoint":
-            # Auto-check locally mounted when "Local" is selected
-            try:
-                checkbox = self.query_one("#locally_mounted", Checkbox)
-                if event.value == "Local":
-                    checkbox.value = True
-                self._refresh_sync_button_state()
-            except Exception:
-                pass
-            try:
-                row = self.query_one("#data_endpoint_other_row", Horizontal)
-                if event.value and str(event.value).lower() == "other":
-                    row.remove_class("hidden")
-                else:
-                    row.add_class("hidden")
-            except Exception:
-                pass
-        elif event.select.id == "collab_role_select":
+        if event.select.id == "collab_role_select":
             pass
-        elif event.select.id == "data_size_unit":
-            pass
-        elif event.select.id == "data_format":
-            try:
-                row = self.query_one("#data_format_other_row", Horizontal)
-                if event.value and str(event.value).lower() == "other":
-                    row.remove_class("hidden")
-                else:
-                    row.add_class("hidden")
-            except Exception:
-                pass
         elif event.select.id == "modality":
             try:
                 row = self.query_one("#modality_other_row", Horizontal)
@@ -620,21 +642,11 @@ class BAApp(App[dict[str, object] | None]):
                 pass
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        if event.checkbox.id == "locally_mounted":
-            self._refresh_sync_button_state()
-            if not event.value:
-                self._hide_path_suggestions()
-        elif event.checkbox.id == "data_compressed":
-            try:
-                row = self.query_one("#data_uncompressed_row", Horizontal)
-                if event.value:
-                    row.remove_class("hidden")
-                else:
-                    row.add_class("hidden")
-            except Exception:
-                pass
-        elif event.checkbox.id == "data_enabled":
+        if event.checkbox.id == "data_enabled":
             self._toggle_data_sections(event.value)
+            if not event.value:
+                self._dataset_rows = []
+                self._populate_datasets_table()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle row selection in collaborators or channels table."""
@@ -678,6 +690,73 @@ class BAApp(App[dict[str, object] | None]):
                     )
             except (ValueError, IndexError):
                 pass
+
+        elif event.data_table.id == "datasets_table":
+            try:
+                idx = int(row_key)
+                if 0 <= idx < len(self._dataset_rows):
+                    row_data = self._dataset_rows[idx]
+                    self.push_screen(
+                        DatasetModal(
+                            self._load_endpoint_options(),
+                            self._load_dataset_format_options(),
+                            row_data,
+                        ),
+                        lambda data, i=idx: self._handle_edit_dataset(i, data),
+                    )
+            except (ValueError, IndexError):
+                pass
+
+        elif event.data_table.id == "milestones_table":
+            try:
+                idx = int(row_key)
+                if 0 <= idx < len(self._milestone_rows):
+                    row_data = self._milestone_rows[idx]
+                    self.push_screen(
+                        MilestoneModal(row_data),
+                        lambda data, i=idx: self._handle_edit_milestone(i, data),
+                    )
+            except (ValueError, IndexError):
+                pass
+
+        elif event.data_table.id == "acquisition_table":
+            try:
+                idx = int(row_key)
+                if 0 <= idx < len(self._acquisition_rows):
+                    if (
+                        self._selected_acquisition_index is not None
+                        and self._selected_acquisition_index != idx
+                    ):
+                        self._store_channels_for_session(
+                            self._selected_acquisition_index
+                        )
+                    row_data = self._acquisition_rows[idx]
+                    self.push_screen(
+                        AcquisitionSessionModal(row_data),
+                        lambda data, i=idx: self._handle_edit_acquisition(i, data),
+                    )
+                self._load_session_channels(idx)
+            except (ValueError, IndexError):
+                pass
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id != "acquisition_table":
+            return
+        row_key = event.row_key.value
+        if row_key is None:
+            return
+        try:
+            idx = int(row_key)
+        except (ValueError, TypeError):
+            return
+        if not (0 <= idx < len(self._acquisition_rows)):
+            return
+        if (
+            self._selected_acquisition_index is not None
+            and self._selected_acquisition_index != idx
+        ):
+            self._store_channels_for_session(self._selected_acquisition_index)
+        self._load_session_channels(idx)
 
     def _handle_edit_collaborator(self, idx: int, data: dict[str, str] | None) -> None:
         """Update collaborator data after modal close."""
@@ -854,32 +933,7 @@ class BAApp(App[dict[str, object] | None]):
             pass
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option_list.id == "path_suggestions":
-            # Apply selected path to the active input
-            if self._active_path_input:
-                try:
-                    input_widget = self.query_one(f"#{self._active_path_input}", Input)
-                    selected = str(event.option.prompt)
-                    input_widget.value = selected
-                    self._hide_path_suggestions()
-                    self._refresh_init_validation()
-                    self._refresh_sync_button_state()
-                    # Return focus to input for continued typing
-                    input_widget.focus()
-
-                    def _move_cursor() -> None:
-                        try:
-                            input_widget.cursor_position = len(selected)
-                        except Exception:
-                            pass
-
-                    try:
-                        self.call_later(_move_cursor)
-                    except Exception:
-                        _move_cursor()
-                except Exception:
-                    pass
-        elif event.option_list.id == "method_path_suggestions":
+        if event.option_list.id == "method_path_suggestions":
             if self._active_method_input:
                 try:
                     input_widget = self.query_one(
@@ -905,22 +959,59 @@ class BAApp(App[dict[str, object] | None]):
                     pass
 
     def on_key(self, event) -> None:
+        if event.key == "ctrl+v":
+            try:
+                if isinstance(self.focused, Input):
+                    return
+                tabbed = self.query_one("#tabs", TabbedContent)
+                if tabbed.active == "setup":
+                    setup_sections = self.query_one("#setup_sections", TabbedContent)
+                    if setup_sections.active == "setup_data":
+                        self.action_sync_dataset()
+                        event.prevent_default()
+                        event.stop()
+                        return
+            except Exception:
+                pass
+
         if event.key in ("ctrl+a", "ctrl+d"):
             try:
                 tabbed = self.query_one("#tabs", TabbedContent)
                 # Handle collaborators table in setup tab
                 if tabbed.active == "setup":
+                    table = self.query_one("#datasets_table", DataTable)
+                    if table.has_focus:
+                        if event.key == "ctrl+a":
+                            self.action_add_dataset()
+                        elif event.key == "ctrl+d":
+                            self.action_remove_dataset()
+                        event.prevent_default()
+                        event.stop()
+                        return
                     table = self.query_one("#collaborators_table", DataTable)
                     if table.has_focus:
                         if event.key == "ctrl+a":
                             self.action_add_collaborator_row()
-                        else:
+                        elif event.key == "ctrl+d":
                             self.action_remove_collaborator_row()
                         event.prevent_default()
                         event.stop()
                         return
                 # Handle channels table in science tab
                 elif tabbed.active == "science":
+                    science_sections = self.query_one(
+                        "#science_sections", TabbedContent
+                    )
+                    if science_sections.active == "science_acquisition":
+                        table = self.query_one("#acquisition_table", DataTable)
+                        if table.has_focus:
+                            if event.key == "ctrl+a":
+                                self.action_add_acquisition()
+                            elif event.key == "ctrl+d":
+                                self.action_remove_acquisition()
+                            event.prevent_default()
+                            event.stop()
+                            return
                     table = self.query_one("#channels_table", DataTable)
                     if table.has_focus:
                         if event.key == "ctrl+a":
@@ -939,48 +1030,22 @@ class BAApp(App[dict[str, object] | None]):
                         event.prevent_default()
                         event.stop()
                         return
+                elif tabbed.active == "admin":
+                    admin_sections = self.query_one("#admin_sections", TabbedContent)
+                    if admin_sections.active == "admin_timeline":
+                        table = self.query_one("#milestones_table", DataTable)
+                        if table.has_focus:
+                            if event.key == "ctrl+a":
+                                self.action_add_milestone()
+                            elif event.key == "ctrl+d":
+                                self.action_remove_milestone()
+                            event.prevent_default()
+                            event.stop()
+                            return
             except Exception:
                 pass
 
         # Handle path suggestions keyboard navigation
-        try:
-            if self._path_suggestions_visible:
-                suggestions = self._path_suggestions or self.query_one(
-                    "#path_suggestions", OptionList
-                )
-                if suggestions.has_class("visible"):
-                    # Escape: hide suggestions and return focus to input
-                    if event.key == "escape":
-                        if self._active_path_input:
-                            input_widget = self.query_one(
-                                f"#{self._active_path_input}", Input
-                            )
-                            self._hide_path_suggestions()
-                            input_widget.focus()
-                            event.prevent_default()
-                            event.stop()
-                    # Down arrow from input: focus suggestions
-                    elif event.key == "down" and self._active_path_input:
-                        focused = self.focused
-                        if focused and focused.id == self._active_path_input:
-                            suggestions.focus()
-                            if suggestions.option_count > 0:
-                                suggestions.highlighted = 0
-                            event.prevent_default()
-                            event.stop()
-                    # Up arrow from first suggestion: return to input
-                    elif event.key == "up":
-                        if self.focused == suggestions and suggestions.highlighted == 0:
-                            if self._active_path_input:
-                                input_widget = self.query_one(
-                                    f"#{self._active_path_input}", Input
-                                )
-                                input_widget.focus()
-                                event.prevent_default()
-                                event.stop()
-        except Exception:
-            pass
-
         # Handle method path suggestions
         try:
             if self._method_path_suggestions_visible:
@@ -1124,109 +1189,164 @@ class BAApp(App[dict[str, object] | None]):
 
         # Data fields
         try:
-            if manifest.data:
-                self.query_one("#data_enabled", Checkbox).value = manifest.data.enabled
-                self._toggle_data_sections(manifest.data.enabled)
-                if manifest.data.endpoint:
-                    self.query_one(
-                        "#data_endpoint", Select
-                    ).value = manifest.data.endpoint
-                self.query_one("#data_source", Input).value = str(
-                    manifest.data.source or ""
+            has_datasets = bool(manifest.datasets)
+            self.query_one("#data_enabled", Checkbox).value = has_datasets
+            self._toggle_data_sections(has_datasets)
+            self._dataset_rows = [
+                {
+                    "name": dataset.name,
+                    "endpoint": dataset.endpoint or "",
+                    "source": str(dataset.source or ""),
+                    "local": str(dataset.local or ""),
+                    "locally_mounted": dataset.locally_mounted,
+                    "description": dataset.description or "",
+                    "format": dataset.format or "",
+                    "raw_size_gb": ""
+                    if dataset.raw_size_gb is None
+                    else str(dataset.raw_size_gb),
+                    "raw_size_unit": dataset.raw_size_unit or "gb",
+                    "compressed": bool(dataset.compressed)
+                    if dataset.compressed is not None
+                    else False,
+                    "uncompressed_size_gb": ""
+                    if dataset.uncompressed_size_gb is None
+                    else str(dataset.uncompressed_size_gb),
+                    "uncompressed_size_unit": dataset.uncompressed_size_unit or "gb",
+                }
+                for dataset in manifest.datasets
+            ]
+            self._populate_datasets_table()
+        except Exception:
+            pass
+
+        # Billing fields
+        try:
+            if manifest.billing:
+                self.query_one("#fund_code", Input).value = manifest.billing.fund_code
+                self.query_one("#hourly_rate", Input).value = (
+                    ""
+                    if manifest.billing.hourly_rate is None
+                    else str(manifest.billing.hourly_rate)
                 )
-                self.query_one("#data_local", Input).value = str(
-                    manifest.data.local or ""
+                self.query_one("#budget_hours", Input).value = (
+                    ""
+                    if manifest.billing.budget_hours is None
+                    else str(manifest.billing.budget_hours)
                 )
-                self.query_one(
-                    "#locally_mounted", Checkbox
-                ).value = manifest.data.locally_mounted
-                if manifest.data.format:
-                    self.query_one("#data_format", Select).value = manifest.data.format
-                self.query_one("#data_description", Input).value = (
-                    manifest.data.description or ""
+                self.query_one("#spent_hours", Input).value = (
+                    ""
+                    if manifest.billing.spent_hours is None
+                    else str(manifest.billing.spent_hours)
                 )
-                if manifest.data.raw_size_gb is not None:
-                    self.query_one("#data_size_gb", Input).value = str(
-                        manifest.data.raw_size_gb
-                    )
-                if manifest.data.raw_size_unit:
-                    self.query_one(
-                        "#data_size_unit", Select
-                    ).value = manifest.data.raw_size_unit
-                self.query_one("#data_compressed", Checkbox).value = (
-                    manifest.data.compressed or False
+                start_picker = self.query_one("#billing_start_date", DateSelect)
+                end_picker = self.query_one("#billing_end_date", DateSelect)
+                start_picker.date = self._to_pendulum_date(manifest.billing.start_date)
+                end_picker.date = self._to_pendulum_date(manifest.billing.end_date)
+                self.query_one("#billing_notes", TextArea).text = (
+                    manifest.billing.notes or ""
                 )
-                if manifest.data.uncompressed_size_gb is not None:
-                    self.query_one("#data_uncompressed_size_gb", Input).value = str(
-                        manifest.data.uncompressed_size_gb
-                    )
-                if manifest.data.uncompressed_size_unit:
-                    self.query_one(
-                        "#data_uncompressed_size_unit", Select
-                    ).value = manifest.data.uncompressed_size_unit
+        except Exception:
+            pass
+
+        # Timeline fields
+        try:
+            if manifest.timeline and manifest.timeline.milestones:
+                self._milestone_rows = [
+                    {
+                        "name": milestone.name,
+                        "target_date": milestone.target_date,
+                        "actual_date": milestone.actual_date,
+                        "status": milestone.status,
+                        "notes": milestone.notes,
+                    }
+                    for milestone in manifest.timeline.milestones
+                ]
+            else:
+                self._milestone_rows = []
+            self._populate_milestones_table()
         except Exception:
             pass
 
         # Acquisition fields
         try:
             if manifest.acquisition:
-                self.query_one("#microscope", Input).value = (
-                    manifest.acquisition.microscope or ""
-                )
-                if manifest.acquisition.modality:
-                    modality_value = manifest.acquisition.modality
-                    known_modalities = {
-                        "confocal",
-                        "widefield",
-                        "light-sheet",
-                        "two-photon",
-                        "super-resolution",
-                        "em",
-                        "brightfield",
-                        "phase-contrast",
-                        "dic",
-                        "other",
-                    }
-                    if modality_value in known_modalities:
-                        self.query_one("#modality", Select).value = modality_value
-                    else:
-                        self.query_one("#modality", Select).value = "other"
-                        self.query_one("#modality_custom", Input).value = modality_value
-                self.query_one("#objective", Input).value = (
-                    manifest.acquisition.objective or ""
-                )
-                if manifest.acquisition.channels:
-                    self._channel_rows = [
-                        {
-                            "name": ch.name,
-                            "fluorophore": ch.fluorophore or "",
-                            "excitation_nm": str(ch.excitation_nm)
-                            if ch.excitation_nm
-                            else "",
-                            "emission_nm": str(ch.emission_nm)
-                            if ch.emission_nm
-                            else "",
-                        }
-                        for ch in manifest.acquisition.channels
+                sessions = manifest.acquisition.sessions or []
+                if not sessions and any(
+                    [
+                        manifest.acquisition.microscope,
+                        manifest.acquisition.modality,
+                        manifest.acquisition.objective,
+                        manifest.acquisition.voxel_size,
+                        manifest.acquisition.time_interval_s,
+                        manifest.acquisition.notes,
                     ]
+                ):
+                    sessions = [
+                        {
+                            "microscope": manifest.acquisition.microscope,
+                            "modality": manifest.acquisition.modality,
+                            "objective": manifest.acquisition.objective,
+                            "voxel_size": manifest.acquisition.voxel_size,
+                            "time_interval_s": manifest.acquisition.time_interval_s,
+                            "notes": manifest.acquisition.notes,
+                        }
+                    ]
+
+                self._acquisition_rows = []
+                for session in sessions:
+                    voxel = None
+                    if isinstance(session, dict):
+                        voxel = session.get("voxel_size")
+                    else:
+                        voxel = getattr(session, "voxel_size", None)
+                    self._acquisition_rows.append(
+                        {
+                            "imaging_date": getattr(session, "imaging_date", None)
+                            if not isinstance(session, dict)
+                            else session.get("imaging_date", None),
+                            "microscope": getattr(session, "microscope", None)
+                            if not isinstance(session, dict)
+                            else session.get("microscope", ""),
+                            "modality": getattr(session, "modality", None)
+                            if not isinstance(session, dict)
+                            else session.get("modality", ""),
+                            "objective": getattr(session, "objective", None)
+                            if not isinstance(session, dict)
+                            else session.get("objective", ""),
+                            "voxel_x": str(voxel.x_um)
+                            if voxel and getattr(voxel, "x_um", None) is not None
+                            else "",
+                            "voxel_y": str(voxel.y_um)
+                            if voxel and getattr(voxel, "y_um", None) is not None
+                            else "",
+                            "voxel_z": str(voxel.z_um)
+                            if voxel and getattr(voxel, "z_um", None) is not None
+                            else "",
+                            "time_interval_s": str(
+                                getattr(session, "time_interval_s", None)
+                                if not isinstance(session, dict)
+                                else session.get("time_interval_s", "")
+                            ),
+                            "notes": getattr(session, "notes", None)
+                            if not isinstance(session, dict)
+                            else session.get("notes", ""),
+                            "channels": getattr(session, "channels", None)
+                            if not isinstance(session, dict)
+                            else session.get("channels", []),
+                        }
+                    )
+                self._populate_acquisition_table()
+                if self._acquisition_rows:
+                    try:
+                        table = self.query_one("#acquisition_table", DataTable)
+                        table.show_cursor = True
+                        table.move_cursor(row=0, column=0)
+                        self._load_session_channels(0)
+                    except Exception:
+                        self._load_session_channels(0)
                 else:
                     self._channel_rows = []
-                self._populate_channels_table()
-                if manifest.acquisition.voxel_size:
-                    vs = manifest.acquisition.voxel_size
-                    if vs.x_um is not None:
-                        self.query_one("#voxel_x", Input).value = str(vs.x_um)
-                    if vs.y_um is not None:
-                        self.query_one("#voxel_y", Input).value = str(vs.y_um)
-                    if vs.z_um is not None:
-                        self.query_one("#voxel_z", Input).value = str(vs.z_um)
-                if manifest.acquisition.time_interval_s is not None:
-                    self.query_one("#time_interval", Input).value = str(
-                        manifest.acquisition.time_interval_s
-                    )
-                self.query_one("#acquisition_notes", TextArea).text = (
-                    manifest.acquisition.notes or ""
-                )
+                    self._populate_channels_table()
         except Exception:
             pass
 
@@ -1300,6 +1420,25 @@ class BAApp(App[dict[str, object] | None]):
         except Exception:
             pass
 
+        # Billing defaults
+        try:
+            if manifest.billing:
+                self._defaults["fund_code"] = manifest.billing.fund_code
+                if manifest.billing.hourly_rate is not None:
+                    self._defaults["hourly_rate"] = str(manifest.billing.hourly_rate)
+                if manifest.billing.budget_hours is not None:
+                    self._defaults["budget_hours"] = str(manifest.billing.budget_hours)
+                if manifest.billing.spent_hours is not None:
+                    self._defaults["spent_hours"] = str(manifest.billing.spent_hours)
+                if manifest.billing.start_date:
+                    self._defaults["billing_start_date"] = manifest.billing.start_date
+                if manifest.billing.end_date:
+                    self._defaults["billing_end_date"] = manifest.billing.end_date
+                if manifest.billing.notes:
+                    self._defaults["billing_notes"] = manifest.billing.notes
+        except Exception:
+            pass
+
         # Hardware profiles
         try:
             if manifest.hardware_profiles:
@@ -1323,7 +1462,6 @@ class BAApp(App[dict[str, object] | None]):
 
         # Refresh validation states
         self._refresh_init_validation()
-        self._refresh_sync_button_state()
 
     def _handle_new_manifest_confirm(self, result: str | None) -> None:
         """Handle the confirmation result from NewManifestConfirmScreen."""
@@ -1332,17 +1470,15 @@ class BAApp(App[dict[str, object] | None]):
             try:
                 self.query_one("#project_name", Input).value = ""
                 self.query_one("#analyst", Input).value = ""
-                self.query_one("#data_source", Input).value = ""
-                self.query_one("#data_local", Input).value = ""
                 self.query_one("#data_enabled", Checkbox).value = True
-                self.query_one("#locally_mounted", Checkbox).value = False
+                self._dataset_rows = []
+                self._populate_datasets_table()
                 self._collaborator_rows = [
                     {"name": "", "role": "", "email": "", "affiliation": ""}
                 ]
                 self._populate_collaborators_table()
                 self._set_tab("init")
                 self._refresh_init_validation()
-                self._refresh_sync_button_state()
                 self.notify("New manifest - fill in the form", severity="information")
             except Exception as e:
                 self.notify(f"Could not reset form: {e}", severity="error")
@@ -1436,115 +1572,102 @@ class BAApp(App[dict[str, object] | None]):
             except Exception:
                 pass
 
-            # Update data section
-            if "data" not in manifest_data:
-                manifest_data["data"] = {}
-            manifest_data["data"]["enabled"] = bool(values.get("data_enabled", True))
+            # Update datasets section
+            data_enabled = bool(values.get("data_enabled", True))
+            if data_enabled and self._dataset_rows:
+                manifest_data["datasets"] = self._collect_datasets()
+            else:
+                manifest_data.pop("datasets", None)
 
-            endpoint = str(values.get("data_endpoint", "")).strip()
-            if endpoint:
-                manifest_data["data"]["endpoint"] = endpoint
+            # Collect billing data
+            try:
+                billing_data = {}
+                fund_code = self.query_one("#fund_code", Input).value.strip()
+                if fund_code:
+                    billing_data["fund_code"] = fund_code
 
-            source = str(values.get("data_source", "")).strip()
-            if source:
-                manifest_data["data"]["source"] = source
+                hourly_rate = self.query_one("#hourly_rate", Input).value.strip()
+                if hourly_rate:
+                    billing_data["hourly_rate"] = float(hourly_rate)
 
-            local = str(values.get("data_local", "")).strip()
-            if local:
-                manifest_data["data"]["local"] = local
+                budget_hours = self.query_one("#budget_hours", Input).value.strip()
+                if budget_hours:
+                    billing_data["budget_hours"] = float(budget_hours)
 
-            manifest_data["data"]["locally_mounted"] = bool(
-                values.get("locally_mounted", False)
-            )
+                spent_hours = self.query_one("#spent_hours", Input).value.strip()
+                if spent_hours:
+                    billing_data["spent_hours"] = float(spent_hours)
 
-            data_format = str(values.get("data_format", "")).strip()
-            if data_format:
-                manifest_data["data"]["format"] = data_format
+                start_date = self._normalize_date(
+                    self.query_one("#billing_start_date", DateSelect).value
+                )
+                end_date = self._normalize_date(
+                    self.query_one("#billing_end_date", DateSelect).value
+                )
+                if start_date:
+                    billing_data["start_date"] = start_date
+                if end_date:
+                    billing_data["end_date"] = end_date
 
-            data_description = str(values.get("data_description", "")).strip()
-            if data_description:
-                manifest_data["data"]["description"] = data_description
+                notes = self.query_one("#billing_notes", TextArea).text.strip()
+                if notes:
+                    billing_data["notes"] = notes
 
-            data_size = str(values.get("data_size_gb", "")).strip()
-            if data_size:
-                try:
-                    value = float(data_size)
-                    unit = str(values.get("data_size_unit", "gb")).lower()
-                    if unit == "tb":
-                        value *= 1024.0
-                    manifest_data["data"]["raw_size_gb"] = value
-                    manifest_data["data"]["raw_size_unit"] = unit
-                except ValueError:
-                    pass
+                if billing_data:
+                    if "billing" not in manifest_data:
+                        manifest_data["billing"] = {}
+                    manifest_data["billing"].update(billing_data)
+            except Exception:
+                pass
 
-            manifest_data["data"]["compressed"] = bool(
-                values.get("data_compressed", False)
-            )
+            # Collect timeline data
+            try:
+                milestones = self._collect_milestones()
+                if milestones:
+                    if "timeline" not in manifest_data:
+                        manifest_data["timeline"] = {}
+                    manifest_data["timeline"]["milestones"] = milestones
+                else:
+                    if "timeline" in manifest_data:
+                        manifest_data["timeline"].pop("milestones", None)
+                        if not manifest_data["timeline"]:
+                            manifest_data.pop("timeline", None)
+                if "timeline" in manifest_data:
+                    manifest_data["timeline"].pop("notes", None)
+                    if not manifest_data["timeline"]:
+                        manifest_data.pop("timeline", None)
+            except Exception:
+                pass
 
-            uncompressed_size = str(values.get("data_uncompressed_size_gb", "")).strip()
-            if uncompressed_size:
-                try:
-                    value = float(uncompressed_size)
-                    unit = str(values.get("data_uncompressed_size_unit", "gb")).lower()
-                    if unit == "tb":
-                        value *= 1024.0
-                    manifest_data["data"]["uncompressed_size_gb"] = value
-                    manifest_data["data"]["uncompressed_size_unit"] = unit
-                except ValueError:
-                    pass
+            self._sanitize_manifest_dates(manifest_data)
 
             # Collect acquisition data from Science tab
             try:
                 acquisition_data = {}
+                sessions = self._collect_acquisition_sessions()
+                if sessions:
+                    acquisition_data["sessions"] = sessions
 
-                microscope = self.query_one("#microscope", Input).value.strip()
-                if microscope:
-                    acquisition_data["microscope"] = microscope
+                if self._acquisition_rows:
+                    idx = 0
+                    try:
+                        table = self.query_one("#acquisition_table", DataTable)
+                        if table.cursor_row is not None:
+                            idx = table.cursor_row
+                    except Exception:
+                        idx = 0
+                    if 0 <= idx < len(self._acquisition_rows):
+                        if isinstance(self._acquisition_rows[idx], dict):
+                            self._acquisition_rows[idx]["channels"] = [
+                                dict(row) for row in self._channel_rows
+                            ]
 
-                modality_select = self.query_one("#modality", Select)
-                modality_value = (
-                    str(modality_select.value)
-                    if modality_select.value and modality_select.value != Select.BLANK
-                    else ""
-                )
-                if modality_value.lower() == "other":
-                    custom = self.query_one("#modality_custom", Input).value.strip()
-                    if custom:
-                        modality_value = custom
-                if modality_value:
-                    acquisition_data["modality"] = modality_value
-
-                objective = self.query_one("#objective", Input).value.strip()
-                if objective:
-                    acquisition_data["objective"] = objective
-
-                channels = self._collect_channels()
-                if channels:
-                    acquisition_data["channels"] = channels
-
-                voxel_x = self.query_one("#voxel_x", Input).value.strip()
-                voxel_y = self.query_one("#voxel_y", Input).value.strip()
-                voxel_z = self.query_one("#voxel_z", Input).value.strip()
-                if voxel_x or voxel_y or voxel_z:
-                    acquisition_data["voxel_size"] = {
-                        "x_um": float(voxel_x) if voxel_x else None,
-                        "y_um": float(voxel_y) if voxel_y else None,
-                        "z_um": float(voxel_z) if voxel_z else None,
-                    }
-
-                time_interval = self.query_one("#time_interval", Input).value.strip()
-                if time_interval:
-                    acquisition_data["time_interval_s"] = float(time_interval)
-
-                acq_notes = self.query_one("#acquisition_notes", TextArea).text.strip()
-                if acq_notes:
-                    acquisition_data["notes"] = acq_notes
-
-                # Only update acquisition section if we have data to add
                 if acquisition_data:
                     if "acquisition" not in manifest_data:
                         manifest_data["acquisition"] = {}
                     manifest_data["acquisition"].update(acquisition_data)
+                else:
+                    manifest_data.pop("acquisition", None)
             except Exception:
                 pass  # Skip if Science tab fields not found
 
@@ -1631,10 +1754,10 @@ class BAApp(App[dict[str, object] | None]):
             with open(manifest_path, "w") as f:
                 yaml.safe_dump(manifest_data, f, sort_keys=False)
 
-            if manifest_data.get("data", {}).get("enabled") and manifest_data.get(
-                "data", {}
-            ).get("local"):
-                ensure_data_symlink(self._project_root, manifest_data["data"]["local"])
+            if manifest_data.get("datasets"):
+                local_path = manifest_data["datasets"][0].get("local")
+                if local_path:
+                    ensure_data_symlink(self._project_root, Path(local_path))
 
             # Reload the manifest to update the internal state
             self._manifest = Manifest.model_validate(manifest_data)
@@ -1752,28 +1875,23 @@ class BAApp(App[dict[str, object] | None]):
             input_widget = self.query_one(f"#{self._browse_target}", Input)
             input_widget.value = path
             self._refresh_init_validation()
-            self._refresh_sync_button_state()
             if self._browse_target == "method_path":
                 self._load_method_preview()
         except Exception:
             pass
         self._browse_target = None
 
-    def _start_sync(self) -> None:
+    def _start_sync(self, dataset: dict[str, object]) -> None:
         if self._syncing:
             return
 
         # Check if locally mounted
-        try:
-            checkbox = self.query_one("#locally_mounted", Checkbox)
-            if not checkbox.value:
-                self.notify("Enable 'Locally Mounted' to sync", severity="warning")
-                return
-        except Exception:
-            pass
+        if not bool(dataset.get("locally_mounted", False)):
+            self.notify("Dataset must be locally mounted to sync", severity="warning")
+            return
 
-        source = self.query_one("#data_source", Input).value.strip()
-        local = self.query_one("#data_local", Input).value.strip()
+        source = str(dataset.get("source", "")).strip()
+        local = str(dataset.get("local", "")).strip()
 
         if not source:
             self.notify("Source path is empty", severity="error")
@@ -1888,31 +2006,8 @@ class BAApp(App[dict[str, object] | None]):
 
     def _collect_values(self) -> dict[str, object]:
         data_enabled = self.query_one("#data_enabled", Checkbox)
-        endpoint_select = self.query_one("#data_endpoint", Select)
-        locally_mounted = self.query_one("#locally_mounted", Checkbox)
-        format_select = self.query_one("#data_format", Select)
-        data_endpoint_custom = ""
-        data_format_custom = ""
-        data_description = ""
-        data_size = ""
-        data_size_unit = "gb"
         modality_custom = ""
         environment_custom = ""
-        data_compressed = False
-        data_uncompressed_size = ""
-        data_uncompressed_unit = "gb"
-        try:
-            data_endpoint_custom = self.query_one("#data_endpoint_custom", Input).value
-        except Exception:
-            pass
-        try:
-            data_format_custom = self.query_one("#data_format_custom", Input).value
-        except Exception:
-            pass
-        try:
-            data_description = self.query_one("#data_description", Input).value
-        except Exception:
-            pass
         try:
             modality_custom = self.query_one("#modality_custom", Input).value
         except Exception:
@@ -1921,63 +2016,17 @@ class BAApp(App[dict[str, object] | None]):
             environment_custom = self.query_one("#environment_custom", Input).value
         except Exception:
             pass
-        try:
-            data_size = self.query_one("#data_size_gb", Input).value
-        except Exception:
-            pass
-        try:
-            unit_value = self.query_one("#data_size_unit", Select).value
-            if unit_value and unit_value != Select.BLANK:
-                data_size_unit = str(unit_value)
-        except Exception:
-            pass
-        try:
-            data_compressed = bool(self.query_one("#data_compressed", Checkbox).value)
-        except Exception:
-            pass
-        try:
-            data_uncompressed_size = self.query_one(
-                "#data_uncompressed_size_gb", Input
-            ).value
-        except Exception:
-            pass
-        try:
-            unit_value = self.query_one("#data_uncompressed_size_unit", Select).value
-            if unit_value and unit_value != Select.BLANK:
-                data_uncompressed_unit = str(unit_value)
-        except Exception:
-            pass
-        endpoint_value = str(endpoint_select.value) if endpoint_select.value else ""
-        if endpoint_value.lower() == "other":
-            endpoint_value = data_endpoint_custom.strip()
-        format_value = ""
-        if format_select.value is not Select.BLANK:
-            format_value = str(format_select.value)
-        if format_value.lower() == "other":
-            format_value = data_format_custom.strip()
         return {
             "project_name": self.query_one("#project_name", Input).value,
             "analyst": self.query_one("#analyst", Input).value,
             "data_enabled": data_enabled.value,
-            "data_endpoint": endpoint_value,
-            "data_source": self.query_one("#data_source", Input).value,
-            "data_local": self.query_one("#data_local", Input).value,
-            "data_format": format_value,
-            "locally_mounted": locally_mounted.value,
-            "data_endpoint_custom": data_endpoint_custom,
-            "data_format_custom": data_format_custom,
-            "data_description": data_description,
-            "data_size_gb": data_size,
-            "data_size_unit": data_size_unit,
-            "data_compressed": data_compressed,
-            "data_uncompressed_size_gb": data_uncompressed_size,
-            "data_uncompressed_size_unit": data_uncompressed_unit,
+            "datasets": self._dataset_rows,
             "modality_custom": modality_custom,
             "environment_custom": environment_custom,
         }
 
     def _refresh_init_validation(self) -> None:
-        for field_id in ("project_name", "analyst", "data_source", "data_local"):
+        for field_id in ("project_name", "analyst"):
             widget = self.query_one(f"#{field_id}", Input)
             widget.remove_class("valid")
             widget.remove_class("invalid")
@@ -1985,52 +2034,6 @@ class BAApp(App[dict[str, object] | None]):
                 widget.add_class("valid")
             else:
                 widget.add_class("invalid")
-
-    def _is_sync_disabled(self) -> bool:
-        """Check if sync should be disabled."""
-        try:
-            checkbox = self.query_one("#locally_mounted", Checkbox)
-            if not checkbox.value:
-                return True
-
-            source = self.query_one("#data_source", Input).value.strip()
-            local = self.query_one("#data_local", Input).value.strip()
-
-            if not source or not local:
-                return True
-
-            # Check if source and local are the same
-            source_path = Path(source).expanduser().resolve()
-            local_path = Path(local).expanduser().resolve()
-
-            if source_path == local_path:
-                return True
-
-            # Check if local cache is a symlink pointing to source
-            if local_path.is_symlink():
-                try:
-                    link_target = local_path.resolve()
-                    if link_target == source_path:
-                        return True
-                except Exception:
-                    pass
-
-            return False
-        except Exception:
-            return True
-
-    def _refresh_sync_button_state(self) -> None:
-        """Update sync button appearance based on state."""
-        try:
-            sync_btn = self.query_one("#sync_btn", Button)
-            if self._is_sync_disabled():
-                sync_btn.add_class("disabled")
-                sync_btn.variant = "default"
-            else:
-                sync_btn.remove_class("disabled")
-                sync_btn.variant = "primary"
-        except Exception:
-            pass
 
     def _toggle_data_sections(self, enabled: bool) -> None:
         """Show/hide data sections based on enabled state."""
@@ -2043,70 +2046,10 @@ class BAApp(App[dict[str, object] | None]):
         except Exception:
             pass
 
-    def _update_path_suggestions(self, input_id: str, current_value: str) -> None:
-        """Update path suggestions dropdown based on current input."""
-        try:
-            suggestions = self._path_suggestions or self.query_one(
-                "#path_suggestions", OptionList
-            )
-            suggestions.clear_options()
-
-            if not current_value:
-                self._hide_path_suggestions()
-                return
-
-            # Expand user path and get parent directory
-            path = Path(current_value).expanduser()
-
-            # Determine directory to list and prefix to match
-            if path.is_dir():
-                search_dir = path
-                prefix = ""
-            else:
-                search_dir = path.parent
-                prefix = path.name.lower()
-
-            if not search_dir.exists():
-                self._hide_path_suggestions()
-                return
-
-            # Get matching entries
-            entries = []
-            try:
-                for entry in sorted(search_dir.iterdir()):
-                    if entry.is_dir():
-                        name = entry.name
-                        if not prefix or name.lower().startswith(prefix):
-                            entries.append(str(entry))
-                            if len(entries) >= 10:
-                                break
-            except PermissionError:
-                pass
-
-            if entries:
-                for entry in entries:
-                    suggestions.add_option(Option(entry))
-                suggestions.add_class("visible")
-                self._path_suggestions_visible = True
-                self._active_path_input = input_id
-                # Don't auto-focus - user presses Down arrow to navigate to suggestions
-            else:
-                self._hide_path_suggestions()
-        except Exception:
-            self._hide_path_suggestions()
-
-    def _hide_path_suggestions(self) -> None:
-        """Hide the path suggestions dropdown."""
-        try:
-            suggestions = self._path_suggestions or self.query_one(
-                "#path_suggestions", OptionList
-            )
-            suggestions.remove_class("visible")
-            suggestions.clear_options()
-            self._active_path_input = None
-            self._path_suggestions_visible = False
-        except Exception:
-            pass
+    def _ensure_dataset_rows(self) -> None:
+        if self._dataset_rows:
+            return
+        self._dataset_rows = []
 
     def _update_method_path_suggestions(
         self, input_id: str, current_value: str
@@ -2366,10 +2309,432 @@ class BAApp(App[dict[str, object] | None]):
         except Exception:
             pass
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Acquisition Sessions Table Methods
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _populate_acquisition_table(self) -> None:
+        try:
+            table = self.query_one("#acquisition_table", DataTable)
+            table.clear(columns=True)
+            table.add_columns(
+                "Date",
+                "Microscope",
+                "Modality",
+                "Objective",
+                "Voxel",
+                "Time (s)",
+                "Notes",
+            )
+            for idx, row in enumerate(self._acquisition_rows):
+                table.add_row(
+                    self._format_date_cell(row.get("imaging_date")),
+                    str(row.get("microscope", "")),
+                    str(row.get("modality", "")),
+                    str(row.get("objective", "")),
+                    self._format_voxel(row),
+                    str(row.get("time_interval_s", "")),
+                    self._truncate_text(str(row.get("notes", ""))),
+                    key=str(idx),
+                )
+        except Exception:
+            pass
+
+    def _load_session_channels(self, idx: int) -> None:
+        try:
+            if not (0 <= idx < len(self._acquisition_rows)):
+                self._channel_rows = []
+                self._populate_channels_table()
+                return
+            row = self._acquisition_rows[idx]
+            self._selected_acquisition_index = idx
+            channels = row.get("channels", []) if isinstance(row, dict) else []
+            if (
+                isinstance(channels, list)
+                and channels
+                and isinstance(channels[0], dict)
+            ):
+                self._channel_rows = [
+                    {
+                        "name": ch.get("name", ""),
+                        "fluorophore": ch.get("fluorophore", ""),
+                        "excitation_nm": str(ch.get("excitation_nm", "")),
+                        "emission_nm": str(ch.get("emission_nm", "")),
+                    }
+                    for ch in channels
+                ]
+            else:
+                self._channel_rows = []
+            self._populate_channels_table()
+        except Exception:
+            pass
+
+    def _store_channels_for_selected_session(self) -> None:
+        try:
+            idx = self._get_selected_acquisition_index()
+            if idx is None:
+                return
+            self._store_channels_for_session(idx)
+        except Exception:
+            pass
+
+    def _store_channels_for_session(self, idx: int) -> None:
+        if not (0 <= idx < len(self._acquisition_rows)):
+            return
+        if isinstance(self._acquisition_rows[idx], dict):
+            self._acquisition_rows[idx]["channels"] = [
+                dict(row) for row in self._channel_rows
+            ]
+
+    def _get_selected_acquisition_index(self) -> Optional[int]:
+        try:
+            table = self.query_one("#acquisition_table", DataTable)
+            idx = table.cursor_row
+            if idx is None and self._acquisition_rows:
+                idx = 0
+            if idx is None or not (0 <= idx < len(self._acquisition_rows)):
+                return None
+            return idx
+        except Exception:
+            return None
+
+    def _format_voxel(self, row: dict[str, object]) -> str:
+        x = str(row.get("voxel_x", "")).strip()
+        y = str(row.get("voxel_y", "")).strip()
+        z = str(row.get("voxel_z", "")).strip()
+        if not any([x, y, z]):
+            return ""
+        return f"{x} x {y} x {z}"
+
+    def action_add_acquisition(self) -> None:
+        tabbed = self.query_one("#tabs", TabbedContent)
+        if tabbed.active != "science":
+            return
+        science_sections = self.query_one("#science_sections", TabbedContent)
+        if science_sections.active != "science_acquisition":
+            return
+        self._store_channels_for_selected_session()
+        initial_data = None
+        try:
+            table = self.query_one("#acquisition_table", DataTable)
+            idx = table.cursor_row
+            if idx is not None and 0 <= idx < len(self._acquisition_rows):
+                initial_data = dict(self._acquisition_rows[idx])
+        except Exception:
+            initial_data = None
+        self.push_screen(
+            AcquisitionSessionModal(initial_data),
+            self._handle_new_acquisition,
+        )
+
+    def action_remove_acquisition(self) -> None:
+        try:
+            table = self.query_one("#acquisition_table", DataTable)
+            if table.cursor_row is None:
+                self.notify("Select a session to remove", severity="warning")
+                return
+            idx = table.cursor_row
+            if 0 <= idx < len(self._acquisition_rows):
+                self._acquisition_rows.pop(idx)
+            self._populate_acquisition_table()
+            if self._acquisition_rows:
+                idx = min(idx, len(self._acquisition_rows) - 1)
+                table.move_cursor(row=idx, column=0)
+                self._load_session_channels(idx)
+            else:
+                self._selected_acquisition_index = None
+                self._channel_rows = []
+                self._populate_channels_table()
+        except Exception:
+            pass
+
+    def _handle_new_acquisition(self, data: dict[str, object] | None) -> None:
+        if data:
+            if "channels" not in data:
+                data["channels"] = []
+            self._acquisition_rows.append(data)
+            self._populate_acquisition_table()
+
+            try:
+                table = self.query_one("#acquisition_table", DataTable)
+                idx = len(self._acquisition_rows) - 1
+                table.show_cursor = True
+                table.move_cursor(row=idx, column=0)
+                self._load_session_channels(idx)
+            except Exception:
+                pass
+
+    def _handle_edit_acquisition(
+        self, idx: int, data: dict[str, object] | None
+    ) -> None:
+        if data and 0 <= idx < len(self._acquisition_rows):
+            existing = self._acquisition_rows[idx]
+            if isinstance(existing, dict) and "channels" in existing:
+                data.setdefault("channels", existing.get("channels", []))
+            self._acquisition_rows[idx] = data
+            self._populate_acquisition_table()
+            try:
+                table = self.query_one("#acquisition_table", DataTable)
+                table.move_cursor(row=idx, column=0)
+                self._load_session_channels(idx)
+            except Exception:
+                pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Milestone Table Methods
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _populate_milestones_table(self) -> None:
+        try:
+            table = self.query_one("#milestones_table", DataTable)
+            table.clear(columns=True)
+            table.add_columns("Name", "Target", "Actual", "Status", "Notes")
+            for idx, row in enumerate(self._milestone_rows):
+                table.add_row(
+                    str(row.get("name", "")),
+                    self._format_date_cell(row.get("target_date")),
+                    self._format_date_cell(row.get("actual_date")),
+                    str(row.get("status", "pending")),
+                    self._truncate_text(str(row.get("notes", ""))),
+                    key=str(idx),
+                )
+        except Exception:
+            pass
+
+    def _format_date_cell(self, value: object) -> str:
+        if isinstance(value, date):
+            return value.isoformat()
+        if value:
+            return str(value)
+        return ""
+
+    def _normalize_date(self, value: object) -> date | None:
+        if value is None:
+            return None
+        # Handle datetime (including pendulum.DateTime) - extract pure Python date
+        if isinstance(value, datetime):
+            return date(value.year, value.month, value.day)
+        # Handle pure date objects (but not datetime subclasses)
+        if type(value) is date:
+            return value
+        # Handle objects with .date() method (e.g., pendulum types)
+        date_method = getattr(value, "date", None)
+        if callable(date_method):
+            try:
+                result = date_method()
+                # Convert to pure Python date
+                if isinstance(result, date):
+                    return date(result.year, result.month, result.day)
+                return None
+            except Exception:
+                return None
+        if isinstance(value, str) and value:
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def _to_pendulum_date(self, value: object) -> pendulum.DateTime | None:
+        if value is None:
+            return None
+        if isinstance(value, pendulum.DateTime):
+            return value
+        if isinstance(value, datetime):
+            return pendulum.datetime(value.year, value.month, value.day)
+        if type(value) is date:
+            return pendulum.datetime(value.year, value.month, value.day)
+        date_method = getattr(value, "date", None)
+        if callable(date_method):
+            try:
+                result = date_method()
+                if isinstance(result, date):
+                    return pendulum.datetime(result.year, result.month, result.day)
+            except Exception:
+                return None
+        if isinstance(value, str) and value:
+            try:
+                parsed = pendulum.parse(value)
+                if isinstance(parsed, pendulum.DateTime):
+                    return parsed
+                return None
+            except Exception:
+                return None
+        return None
+
+    def _sanitize_manifest_dates(self, manifest_data: dict[str, object]) -> None:
+        timeline = manifest_data.get("timeline")
+        if isinstance(timeline, dict):
+            milestones = timeline.get("milestones")
+            if isinstance(milestones, list):
+                for milestone in milestones:
+                    if not isinstance(milestone, dict):
+                        continue
+                    for field in ("target_date", "actual_date"):
+                        milestone[field] = self._normalize_date(milestone.get(field))
+
+        billing = manifest_data.get("billing")
+        if isinstance(billing, dict):
+            for field in ("start_date", "end_date"):
+                billing[field] = self._normalize_date(billing.get(field))
+
+    def _truncate_text(self, value: str, max_len: int = 30) -> str:
+        if len(value) <= max_len:
+            return value
+        return f"{value[: max_len - 3]}..."
+
+    def action_add_milestone(self) -> None:
+        tabbed = self.query_one("#tabs", TabbedContent)
+        if tabbed.active != "admin":
+            return
+        admin_sections = self.query_one("#admin_sections", TabbedContent)
+        if admin_sections.active != "admin_timeline":
+            return
+        initial_data = None
+        try:
+            table = self.query_one("#milestones_table", DataTable)
+            idx = table.cursor_row
+            if idx is not None and 0 <= idx < len(self._milestone_rows):
+                initial_data = dict(self._milestone_rows[idx])
+                initial_data["name"] = ""
+        except Exception:
+            initial_data = None
+        self.push_screen(MilestoneModal(initial_data), self._handle_new_milestone)
+
+    def action_remove_milestone(self) -> None:
+        try:
+            table = self.query_one("#milestones_table", DataTable)
+            if table.cursor_row is None:
+                return
+            idx = table.cursor_row
+            if 0 <= idx < len(self._milestone_rows):
+                self._milestone_rows.pop(idx)
+            self._populate_milestones_table()
+            if self._milestone_rows:
+                idx = min(idx, len(self._milestone_rows) - 1)
+                table.move_cursor(row=idx, column=0)
+        except Exception:
+            pass
+
+    def _handle_new_milestone(self, data: dict[str, object] | None) -> None:
+        if data:
+            self._milestone_rows.append(data)
+            self._populate_milestones_table()
+
+    def _handle_edit_milestone(self, idx: int, data: dict[str, object] | None) -> None:
+        if data and 0 <= idx < len(self._milestone_rows):
+            self._milestone_rows[idx] = data
+            self._populate_milestones_table()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Dataset Table Methods
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _populate_datasets_table(self) -> None:
+        try:
+            table = self.query_one("#datasets_table", DataTable)
+            table.clear(columns=True)
+            table.add_columns("Name", "Endpoint", "Source", "Local", "Format", "Size")
+            for idx, row in enumerate(self._dataset_rows):
+                table.add_row(
+                    str(row.get("name", "")),
+                    str(row.get("endpoint", "")),
+                    self._truncate_path(str(row.get("source", ""))),
+                    self._truncate_path(str(row.get("local", ""))),
+                    str(row.get("format", "")),
+                    self._format_dataset_size(row),
+                    key=str(idx),
+                )
+        except Exception:
+            pass
+
+    def _format_dataset_size(self, row: dict[str, object]) -> str:
+        raw_size = str(row.get("raw_size_gb", "")).strip()
+        if not raw_size:
+            return ""
+        unit = str(row.get("raw_size_unit", "gb")).lower()
+        suffix = unit.upper() if unit else "GB"
+        return f"{raw_size} {suffix}"
+
+    def _truncate_path(self, value: str, max_len: int = 30) -> str:
+        if len(value) <= max_len:
+            return value
+        return f"...{value[-(max_len - 3) :]}"
+
+    def action_add_dataset(self) -> None:
+        tabbed = self.query_one("#tabs", TabbedContent)
+        if tabbed.active != "setup":
+            return
+        initial_data = None
+        try:
+            table = self.query_one("#datasets_table", DataTable)
+            idx = table.cursor_row
+            if idx is not None and 0 <= idx < len(self._dataset_rows):
+                initial_data = dict(self._dataset_rows[idx])
+                initial_data["name"] = ""
+        except Exception:
+            initial_data = None
+        self.push_screen(
+            DatasetModal(
+                self._load_endpoint_options(),
+                self._load_dataset_format_options(),
+                initial_data,
+            ),
+            self._handle_new_dataset,
+        )
+
+    def action_remove_dataset(self) -> None:
+        try:
+            table = self.query_one("#datasets_table", DataTable)
+            if table.cursor_row is None:
+                self.notify("Select a dataset to remove", severity="warning")
+                return
+            idx = table.cursor_row
+            if 0 <= idx < len(self._dataset_rows):
+                self._dataset_rows.pop(idx)
+            self._populate_datasets_table()
+            if self._dataset_rows:
+                idx = min(idx, len(self._dataset_rows) - 1)
+                table.move_cursor(row=idx, column=0)
+        except Exception:
+            pass
+
+    def action_sync_dataset(self) -> None:
+        try:
+            table = self.query_one("#datasets_table", DataTable)
+            idx = table.cursor_row
+            if idx is None and self._dataset_rows:
+                idx = 0
+            if idx is None or not (0 <= idx < len(self._dataset_rows)):
+                self.notify("Select a dataset to sync", severity="warning")
+                return
+            row = self._dataset_rows[idx]
+            self._start_sync(row)
+        except Exception:
+            pass
+
+    def _handle_new_dataset(self, data: dict[str, object] | None) -> None:
+        if data:
+            self._dataset_rows.append(data)
+            self._populate_datasets_table()
+
+    def _handle_edit_dataset(self, idx: int, data: dict[str, object] | None) -> None:
+        if data and 0 <= idx < len(self._dataset_rows):
+            self._dataset_rows[idx] = data
+            self._populate_datasets_table()
+            try:
+                table = self.query_one("#datasets_table", DataTable)
+                table.move_cursor(row=idx, column=0)
+            except Exception:
+                pass
+
     def action_add_channel_row(self) -> None:
         """Action to add a new channel row."""
         tabbed = self.query_one("#tabs", TabbedContent)
         if tabbed.active != "science":
+            return
+        if not self._acquisition_rows:
+            self.notify("Add an imaging session first", severity="warning")
             return
         self.push_screen(ChannelModal(), self._handle_new_channel)
 
@@ -2378,19 +2743,19 @@ class BAApp(App[dict[str, object] | None]):
         if data:
             self._channel_rows.append(data)
             self._populate_channels_table()
+            self._store_channels_for_selected_session()
 
     def action_remove_channel_row(self) -> None:
         """Action to remove the selected channel row."""
         try:
             table = self.query_one("#channels_table", DataTable)
-            if not table.has_focus:
-                return
             if table.cursor_row is None:
                 return
             idx = table.cursor_row
             if 0 <= idx < len(self._channel_rows):
                 self._channel_rows.pop(idx)
             self._populate_channels_table()
+            self._store_channels_for_selected_session()
             if self._channel_rows:
                 idx = min(idx, len(self._channel_rows) - 1)
                 table.move_cursor(row=idx, column=0)
@@ -2402,6 +2767,7 @@ class BAApp(App[dict[str, object] | None]):
         if data and 0 <= idx < len(self._channel_rows):
             self._channel_rows[idx] = data
             self._populate_channels_table()
+            self._store_channels_for_selected_session()
 
     def _collect_channels(self) -> list[dict[str, object]]:
         """Collect channel data for saving."""
@@ -2422,6 +2788,118 @@ class BAApp(App[dict[str, object] | None]):
                 channel["emission_nm"] = int(em_nm)
             channels.append(channel)
         return channels
+
+    def _collect_datasets(self) -> list[dict[str, object]]:
+        datasets: list[dict[str, object]] = []
+        for row in self._dataset_rows:
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            dataset: dict[str, object] = {"name": name}
+            endpoint = str(row.get("endpoint", "")).strip()
+            if endpoint:
+                dataset["endpoint"] = endpoint
+            source = str(row.get("source", "")).strip()
+            if source:
+                dataset["source"] = source
+            local = str(row.get("local", "")).strip()
+            if local:
+                dataset["local"] = local
+            dataset["locally_mounted"] = bool(row.get("locally_mounted", False))
+            description = str(row.get("description", "")).strip()
+            if description:
+                dataset["description"] = description
+            data_format = str(row.get("format", "")).strip()
+            if data_format:
+                dataset["format"] = data_format
+            raw_size = str(row.get("raw_size_gb", "")).strip()
+            if raw_size:
+                try:
+                    dataset["raw_size_gb"] = float(raw_size)
+                except ValueError:
+                    pass
+            raw_unit = str(row.get("raw_size_unit", "")).strip()
+            if raw_unit:
+                dataset["raw_size_unit"] = raw_unit
+            compressed = row.get("compressed")
+            if compressed is not None:
+                dataset["compressed"] = bool(compressed)
+            uncompressed_size = str(row.get("uncompressed_size_gb", "")).strip()
+            if uncompressed_size:
+                try:
+                    dataset["uncompressed_size_gb"] = float(uncompressed_size)
+                except ValueError:
+                    pass
+            uncompressed_unit = str(row.get("uncompressed_size_unit", "")).strip()
+            if uncompressed_unit:
+                dataset["uncompressed_size_unit"] = uncompressed_unit
+            datasets.append(dataset)
+        return datasets
+
+    def _collect_milestones(self) -> list[dict[str, object]]:
+        milestones: list[dict[str, object]] = []
+        for row in self._milestone_rows:
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            milestone: dict[str, object] = {"name": name}
+            target = self._normalize_date(row.get("target_date"))
+            actual = self._normalize_date(row.get("actual_date"))
+            if target:
+                milestone["target_date"] = target
+            if actual:
+                milestone["actual_date"] = actual
+            status = str(row.get("status", "")).strip()
+            if status:
+                milestone["status"] = status
+            notes = str(row.get("notes", "")).strip()
+            if notes:
+                milestone["notes"] = notes
+            milestones.append(milestone)
+        return milestones
+
+    def _collect_acquisition_sessions(self) -> list[dict[str, object]]:
+        sessions: list[dict[str, object]] = []
+        for row in self._acquisition_rows:
+            session: dict[str, object] = {}
+            imaging_date = self._normalize_date(row.get("imaging_date"))
+            if imaging_date:
+                session["imaging_date"] = imaging_date
+            microscope = str(row.get("microscope", "")).strip()
+            if microscope:
+                session["microscope"] = microscope
+            modality = str(row.get("modality", "")).strip()
+            if modality:
+                session["modality"] = modality
+            objective = str(row.get("objective", "")).strip()
+            if objective:
+                session["objective"] = objective
+
+            voxel_x = str(row.get("voxel_x", "")).strip()
+            voxel_y = str(row.get("voxel_y", "")).strip()
+            voxel_z = str(row.get("voxel_z", "")).strip()
+            if voxel_x or voxel_y or voxel_z:
+                session["voxel_size"] = {
+                    "x_um": float(voxel_x) if voxel_x else None,
+                    "y_um": float(voxel_y) if voxel_y else None,
+                    "z_um": float(voxel_z) if voxel_z else None,
+                }
+
+            time_interval = str(row.get("time_interval_s", "")).strip()
+            if time_interval:
+                session["time_interval_s"] = float(time_interval)
+
+            notes = str(row.get("notes", "")).strip()
+            if notes:
+                session["notes"] = notes
+
+            channels = row.get("channels", []) if isinstance(row, dict) else []
+            if isinstance(channels, list) and channels:
+                session["channels"] = channels
+
+            if session:
+                sessions.append(session)
+        return sessions
 
     def _submit_init(self) -> None:
         if self._mode not in ("init", "menu", "both"):

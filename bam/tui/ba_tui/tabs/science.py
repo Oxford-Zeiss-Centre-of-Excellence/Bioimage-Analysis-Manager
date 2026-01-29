@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Center, Horizontal, VerticalScroll
 from textual.widgets import (
     Button,
     DataTable,
@@ -29,95 +29,41 @@ def compose_science_tab(app: object) -> ComposeResult:
             # ─────────────────────────────────────────────────────────────
             with TabPane("Acquisition", id="science_acquisition"):
                 with VerticalScroll(id="acquisition_form"):
-                    yield Static("Imaging Parameters", classes="section-header")
-                    with Horizontal(classes="form-row"):
-                        yield Label("Microscope:")
-                        yield Input(
-                            app._defaults.get("microscope", ""),
-                            placeholder="Microscope model/name",
-                            id="microscope",
+                    yield Static(
+                        "Imaging Sessions (Ctrl+A: Add, Enter: Edit, Ctrl+D: Remove)",
+                        classes="section-header",
+                    )
+                    with Center():
+                        yield DataTable(id="acquisition_table", cursor_type="row")
+                    with Horizontal(id="acquisition_actions"):
+                        yield Button(
+                            "Add",
+                            id="add_acquisition",
+                            variant="success",
                         )
-                    with Horizontal(classes="form-row"):
-                        yield Label("Modality:")
-                        yield Select(
-                            [
-                                ("Confocal", "confocal"),
-                                ("Widefield", "widefield"),
-                                ("Light-sheet", "light-sheet"),
-                                ("Two-photon", "two-photon"),
-                                ("Super-resolution", "super-resolution"),
-                                ("EM", "em"),
-                                ("Brightfield", "brightfield"),
-                                ("Phase contrast", "phase-contrast"),
-                                ("DIC", "dic"),
-                                ("Other", "other"),
-                            ],
-                            value=app._defaults.get("modality", Select.BLANK),
-                            allow_blank=True,
-                            id="modality",
-                        )
-                    with Horizontal(
-                        classes="form-row"
-                        + (
-                            ""
-                            if app._defaults.get("modality", "").lower() == "other"
-                            else " hidden"
-                        ),
-                        id="modality_other_row",
-                    ):
-                        yield Label("Custom modality:")
-                        yield Input(
-                            app._defaults.get("modality_custom", ""),
-                            placeholder="Enter modality",
-                            id="modality_custom",
-                        )
-                    with Horizontal(classes="form-row"):
-                        yield Label("Objective:")
-                        yield Input(
-                            app._defaults.get("objective", ""),
-                            placeholder="e.g., 40x/1.3 Oil",
-                            id="objective",
+                        yield Button(
+                            "Remove",
+                            id="remove_acquisition",
+                            variant="error",
                         )
 
                     yield Static(
                         "Channels (Ctrl+A: add, Ctrl+D: delete, Enter: edit)",
                         classes="section-header",
                     )
-                    yield DataTable(id="channels_table", cursor_type="row")
-
-                    yield Static("Voxel Size", classes="section-header")
-                    with Horizontal(classes="form-row"):
-                        yield Label("X (µm):")
-                        yield Input(
-                            app._defaults.get("voxel_x", ""),
-                            placeholder="X dimension",
-                            id="voxel_x",
+                    with Center():
+                        yield DataTable(id="channels_table", cursor_type="row")
+                    with Horizontal(id="channel_actions"):
+                        yield Button(
+                            "Add",
+                            id="add_channel",
+                            variant="success",
                         )
-                        yield Label("Y (µm):")
-                        yield Input(
-                            app._defaults.get("voxel_y", ""),
-                            placeholder="Y dimension",
-                            id="voxel_y",
+                        yield Button(
+                            "Remove",
+                            id="remove_channel",
+                            variant="error",
                         )
-                        yield Label("Z (µm):")
-                        yield Input(
-                            app._defaults.get("voxel_z", ""),
-                            placeholder="Z dimension",
-                            id="voxel_z",
-                        )
-                    with Horizontal(classes="form-row"):
-                        yield Label("Time interval (s):")
-                        yield Input(
-                            app._defaults.get("time_interval", ""),
-                            placeholder="For timelapse imaging",
-                            id="time_interval",
-                        )
-
-                    yield Static("Acquisition Notes")
-                    yield TextArea(
-                        app._defaults.get("acquisition_notes", ""),
-                        id="acquisition_notes",
-                    )
 
             # ─────────────────────────────────────────────────────────────
             # Method Section
@@ -303,7 +249,8 @@ def compose_science_tab(app: object) -> ComposeResult:
             with TabPane("Hardware", id="science_hardware"):
                 with VerticalScroll(id="hardware_form"):
                     yield Static("Hardware Profiles", classes="section-header")
-                    yield DataTable(id="hardware_table", cursor_type="row")
+                    with Center():
+                        yield DataTable(id="hardware_table", cursor_type="row")
                     with Horizontal(classes="form-row", id="hardware_actions"):
                         yield Button("Add", id="hardware_add", variant="success")
                         yield Button("Remove", id="hardware_remove", variant="error")
