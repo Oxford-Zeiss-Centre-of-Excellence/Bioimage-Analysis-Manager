@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 
 # =============================================================================
@@ -329,6 +329,14 @@ class Channel(BaseModel):
     excitation_nm: Optional[int] = None
     emission_nm: Optional[int] = None
 
+    @field_validator("excitation_nm", "emission_nm", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v: Any) -> Any:
+        """Convert empty strings to None for optional int fields."""
+        if v == "" or v == "None":
+            return None
+        return v
+
     @classmethod
     def from_pipe_string(cls, line: str) -> "Channel":
         """Parse from pipe-separated string."""
@@ -358,6 +366,14 @@ class VoxelSize(BaseModel):
     y_um: Optional[float] = None
     z_um: Optional[float] = None
 
+    @field_validator("x_um", "y_um", "z_um", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v: Any) -> Any:
+        """Convert empty strings to None for optional float fields."""
+        if v == "" or v == "None":
+            return None
+        return v
+
 
 class AcquisitionSession(BaseModel):
     """Single imaging session parameters."""
@@ -370,6 +386,14 @@ class AcquisitionSession(BaseModel):
     time_interval_s: Optional[float] = None
     notes: str = ""
     channels: list[Channel] = Field(default_factory=list)
+
+    @field_validator("time_interval_s", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v: Any) -> Any:
+        """Convert empty strings to None for optional float fields."""
+        if v == "" or v == "None":
+            return None
+        return v
 
 
 class Acquisition(BaseModel):
@@ -384,6 +408,14 @@ class Acquisition(BaseModel):
     voxel_size: Optional[VoxelSize] = None
     time_interval_s: Optional[float] = None
     notes: str = ""
+
+    @field_validator("time_interval_s", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v: Any) -> Any:
+        """Convert empty strings to None for optional float fields."""
+        if v == "" or v == "None":
+            return None
+        return v
 
     @model_validator(mode="before")
     @classmethod

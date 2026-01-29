@@ -857,7 +857,7 @@ class BAApp(App[dict[str, object] | None]):
             else:
                 self.notify("Method template already exists", severity="warning")
         except Exception as exc:
-            self.notify(f"Template creation failed: {exc}", severity="error")
+            self.notify(f"Template creation failed: {exc}", severity="error", markup=False)
 
     def _add_list_entries(self, list_id: str, title: str) -> None:
         """Open modal to add comma-separated entries."""
@@ -1481,7 +1481,7 @@ class BAApp(App[dict[str, object] | None]):
                 self._refresh_init_validation()
                 self.notify("New manifest - fill in the form", severity="information")
             except Exception as e:
-                self.notify(f"Could not reset form: {e}", severity="error")
+                self.notify(f"Could not reset form: {e}", severity="error", markup=False)
         # "cancel" does nothing, just closes the modal
 
     def action_submit(self) -> None:
@@ -1764,7 +1764,7 @@ class BAApp(App[dict[str, object] | None]):
 
             self.notify("Manifest saved", severity="information")
         except Exception as e:
-            self.notify(f"Save failed: {e}", severity="error")
+            self.notify(f"Save failed: {e}", severity="error", markup=False)
 
     def _save_log(self) -> None:
         """Save worklog without exiting."""
@@ -1776,7 +1776,7 @@ class BAApp(App[dict[str, object] | None]):
             save_worklog(self._project_root, worklog)
             self.notify("Worklog saved", severity="information")
         except Exception as e:
-            self.notify(f"Save failed: {e}", severity="error")
+            self.notify(f"Save failed: {e}", severity="error", markup=False)
 
     def _save_manifest(self) -> None:
         """Save manifest tab without exiting."""
@@ -1821,7 +1821,7 @@ class BAApp(App[dict[str, object] | None]):
             dump_manifest(manifest_path, manifest)
             self.notify("Manifest saved", severity="information")
         except Exception as e:
-            self.notify(f"Save failed: {e}", severity="error")
+            self.notify(f"Save failed: {e}", severity="error", markup=False)
 
     def action_exit_app(self) -> None:
         self.push_screen(ExitConfirmScreen(), self._handle_exit_confirm)
@@ -1994,9 +1994,9 @@ class BAApp(App[dict[str, object] | None]):
                 stderr = b""
                 if proc.stderr:
                     stderr = await proc.stderr.read()
-                self.notify(f"Sync failed: {stderr.decode().strip()}", severity="error")
+                self.notify(f"Sync failed: {stderr.decode().strip()}", severity="error", markup=False)
         except Exception as e:
-            self.notify(f"Sync error: {e}", severity="error")
+            self.notify(f"Sync error: {e}", severity="error", markup=False)
         finally:
             self._syncing = False
             # Hide progress bar after a short delay
@@ -2233,7 +2233,7 @@ class BAApp(App[dict[str, object] | None]):
             else:
                 self._edit_text_cell(row_idx, col_idx, field_name, current_value)
         except Exception as e:
-            self.notify(f"Error editing cell: {e}", severity="error")
+            self.notify(f"Error editing cell: {e}", severity="error", markup=False)
 
     def _edit_text_cell(
         self, row_idx: int, col_idx: int, field_name: str, current_value: str

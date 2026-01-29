@@ -1,12 +1,45 @@
 from __future__ import annotations
 
+from textual.css.query import NoMatches
+
 from textual_datepicker import DateSelect as _DateSelect
 from textual_datepicker import DatePicker
+from textual_datepicker._date_select import DatePickerDialog
 
 
 class DateSelect(_DateSelect):
+    def on_mount(self) -> None:
+        """Override to query within screen context instead of app."""
+        if self.dialog is None:
+            self.dialog = DatePickerDialog()
+            self.dialog.target = self
+            # Use screen.query_one instead of app.query_one for modal support
+            self.screen.query_one(self.picker_mount).mount(self.dialog)
+
     def _show_date_picker(self) -> None:
-        super()._show_date_picker()
+        """Override to use screen.query_one instead of app.query_one."""
+        mnt_widget = self.screen.query_one(self.picker_mount)
+        self.dialog.display = True
+
+        # calculate offset of DateSelect and apply it to DatePickerDialog
+        self.dialog.offset = self.region.offset - mnt_widget.content_region.offset
+
+        # move down 3 (height of input)
+        self.dialog.offset = (self.dialog.offset.x, self.dialog.offset.y + 3)
+
+        if self.date is not None:
+            self.dialog.date_picker.date = self.date
+            for day in self.dialog.query("DayLabel.--day"):
+                if day.day == self.date.day:
+                    day.focus()
+                    break
+        else:
+            try:
+                self.dialog.query_one("DayLabel.--today").focus()
+            except NoMatches:
+                self.dialog.query("DayLabel.--day").first().focus()
+
+        # Additional fixes for date picker display
         try:
             date_picker = self.dialog.date_picker
             date_picker._update_month_label()
@@ -42,8 +75,8 @@ class DateSelect(_DateSelect):
         """Toggle the expanded class on the picker mount point."""
         try:
             mount_selector = self.picker_mount
-            if mount_selector and self.app:
-                mount = self.app.query_one(mount_selector)
+            if mount_selector and self.screen:
+                mount = self.screen.query_one(mount_selector)
                 if expand:
                     mount.add_class("expanded")
                 else:

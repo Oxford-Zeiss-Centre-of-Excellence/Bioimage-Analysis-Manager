@@ -891,7 +891,10 @@ class DatasetModal(ModalScreen[dict[str, object] | None]):
                     )
                     if event.key == "down":
                         focused = self.focused
-                        if focused and getattr(focused, "id", "") == self._active_path_input:
+                        if (
+                            focused
+                            and getattr(focused, "id", "") == self._active_path_input
+                        ):
                             suggestions.focus()
                             if suggestions.option_count > 0:
                                 suggestions.highlighted = 0
@@ -953,7 +956,9 @@ class DatasetModal(ModalScreen[dict[str, object] | None]):
 
     def on_option_list_blurred(self, event: OptionList.Blurred) -> None:
         if event.option_list.id in ("source_suggestions", "local_suggestions"):
-            input_id = "source" if event.option_list.id == "source_suggestions" else "local"
+            input_id = (
+                "source" if event.option_list.id == "source_suggestions" else "local"
+            )
             focused = self.focused
             # Don't hide if focus moved back to input
             if focused and getattr(focused, "id", "") == input_id:
@@ -962,7 +967,9 @@ class DatasetModal(ModalScreen[dict[str, object] | None]):
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id in ("source_suggestions", "local_suggestions"):
-            input_id = "source" if event.option_list.id == "source_suggestions" else "local"
+            input_id = (
+                "source" if event.option_list.id == "source_suggestions" else "local"
+            )
             try:
                 input_widget = self.query_one(f"#{input_id}", Input)
                 selected = str(event.option.prompt)
@@ -1130,6 +1137,8 @@ class MilestoneModal(ModalScreen[dict[str, object] | None]):
                         placeholder="Milestone name",
                     )
 
+                yield Static("", id="milestone_datepicker_mount")
+
                 with Horizontal(classes="form-row"):
                     yield Label("Target date:")
                     yield DateSelect(
@@ -1145,8 +1154,6 @@ class MilestoneModal(ModalScreen[dict[str, object] | None]):
                         date=actual_value,
                         id="milestone_actual_date",
                     )
-
-                yield Static("", id="milestone_datepicker_mount")
 
                 with Horizontal(classes="form-row"):
                     yield Label("Status:")
