@@ -210,7 +210,7 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
             with Horizontal(id="buttons"):
                 yield Button("Save (Ctrl+A)", variant="success", id="save")
                 if self._allow_remove:
-                    yield Button("Remove", variant="error", id="remove")
+                    yield Button("Remove (Ctrl+D)", variant="error", id="remove")
                 yield Button("Cancel (Esc)", variant="default", id="cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

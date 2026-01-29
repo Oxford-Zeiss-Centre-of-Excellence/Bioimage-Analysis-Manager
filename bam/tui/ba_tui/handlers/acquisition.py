@@ -129,10 +129,10 @@ class AcquisitionMixin:
         return f"{x} x {y} x {z}"
 
     def action_add_acquisition(self) -> None:
-        if self.query_one("#tabs", "TabbedContent").active != "science":
+        if self.query_one("#tabs", TabbedContent).active != "science":
             return
         if (
-            self.query_one("#science_sections", "TabbedContent").active
+            self.query_one("#science_sections", TabbedContent).active
             != "science_acquisition"
         ):
             return

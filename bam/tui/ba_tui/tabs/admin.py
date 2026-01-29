@@ -116,12 +116,12 @@ def compose_admin_tab(app: object) -> ComposeResult:
                         yield DataTable(id="milestones_table", cursor_type="row")
                     with Horizontal(id="milestone_actions"):
                         yield Button(
-                            "Add Milestone",
+                            "Add Milestone (Ctrl+A)",
                             id="add_milestone",
                             variant="success",
                         )
                         yield Button(
-                            "Remove",
+                            "Remove (Ctrl+D)",
                             id="remove_milestone",
                             variant="error",
                         )

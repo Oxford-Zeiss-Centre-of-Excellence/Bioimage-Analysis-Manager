@@ -560,6 +560,10 @@ APP_CSS = """
     width: 1fr;
 }
 
+.form-row DateSelect {
+    width: 1fr;
+}
+
 .form-row Button {
     margin-left: 1;
     min-width: 8;
@@ -632,6 +636,11 @@ SelectionList Checkbox {
 
 TextArea {
     height: 5;
+}
+
+DateSelect {
+    height: 3;
+    min-height: 3;
 }
 
 #log_entries {

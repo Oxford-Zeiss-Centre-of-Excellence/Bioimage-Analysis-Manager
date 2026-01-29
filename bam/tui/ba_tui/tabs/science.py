@@ -37,12 +37,12 @@ def compose_science_tab(app: object) -> ComposeResult:
                         yield DataTable(id="acquisition_table", cursor_type="row")
                     with Horizontal(id="acquisition_actions"):
                         yield Button(
-                            "Add",
+                            "Add (Ctrl+A)",
                             id="add_acquisition",
                             variant="success",
                         )
                         yield Button(
-                            "Remove",
+                            "Remove (Ctrl+D)",
                             id="remove_acquisition",
                             variant="error",
                         )
@@ -55,12 +55,12 @@ def compose_science_tab(app: object) -> ComposeResult:
                         yield DataTable(id="channels_table", cursor_type="row")
                     with Horizontal(id="channel_actions"):
                         yield Button(
-                            "Add",
+                            "Add (Ctrl+A)",
                             id="add_channel",
                             variant="success",
                         )
                         yield Button(
-                            "Remove",
+                            "Remove (Ctrl+D)",
                             id="remove_channel",
                             variant="error",
                         )
@@ -109,7 +109,7 @@ def compose_science_tab(app: object) -> ComposeResult:
                             (label, label, label in app._defaults.get("languages", []))
                             for label in (
                                 "Python",
-                                "Shell scripting",
+                                "Shell scripting (Bash, Zsh, etc.)",
                                 "MATLAB",
                                 "Fiji macro",
                                 "LaTeX",
@@ -252,8 +252,12 @@ def compose_science_tab(app: object) -> ComposeResult:
                     with Center():
                         yield DataTable(id="hardware_table", cursor_type="row")
                     with Horizontal(classes="form-row", id="hardware_actions"):
-                        yield Button("Add", id="hardware_add", variant="success")
-                        yield Button("Remove", id="hardware_remove", variant="error")
+                        yield Button(
+                            "Add (Ctrl+A)", id="hardware_add", variant="success"
+                        )
+                        yield Button(
+                            "Remove (Ctrl+D)", id="hardware_remove", variant="error"
+                        )
                         yield Button(
                             "Detect Hardware", id="hardware_detect", variant="primary"
                         )

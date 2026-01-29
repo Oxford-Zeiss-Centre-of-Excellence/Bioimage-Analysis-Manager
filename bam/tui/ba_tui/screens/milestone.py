@@ -48,8 +48,6 @@ class MilestoneModal(FormModal):
                         placeholder="Milestone name",
                     )
 
-                yield Static("", id="milestone_datepicker_mount")
-
                 with Horizontal(classes="form-row"):
                     yield Label("Target date:")
                     yield DateSelect(
@@ -65,6 +63,7 @@ class MilestoneModal(FormModal):
                         date=actual_value,
                         id="milestone_actual_date",
                     )
+                yield Static("", id="milestone_datepicker_mount")
 
                 with Horizontal(classes="form-row"):
                     yield Label("Status:")
@@ -87,7 +86,7 @@ class MilestoneModal(FormModal):
             with Horizontal(id="buttons"):
                 yield Button("Save (Ctrl+A)", variant="success", id="save")
                 if self._allow_remove:
-                    yield Button("Remove", variant="error", id="remove")
+                    yield Button("Remove (Ctrl+D)", variant="error", id="remove")
                 yield Button("Cancel (Esc)", variant="default", id="cancel")
 
     def _submit(self) -> None:

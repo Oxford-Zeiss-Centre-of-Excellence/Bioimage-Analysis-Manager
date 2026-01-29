@@ -9,16 +9,29 @@ from textual_datepicker._date_select import DatePickerDialog
 
 class DateSelect(_DateSelect):
     _dialog_was_visible = False
+    _dialog_mounted = False
 
     def on_mount(self) -> None:
         """Override to query within screen context instead of app."""
+        # Create dialog early to prevent parent's on_mount from creating one
         if self.dialog is None:
             self.dialog = DatePickerDialog()
             self.dialog.target = self
-            # Use screen.query_one instead of app.query_one for modal support
-            self.screen.query_one(self.picker_mount).mount(self.dialog)
+        # Defer actual mounting to ensure mount point exists
+        self.call_later(self._mount_dialog)
         # Start polling for dialog state changes
         self.set_interval(0.2, self._poll_dialog_state)
+
+    def _mount_dialog(self) -> None:
+        """Mount the dialog after the screen is fully composed."""
+        if self._dialog_mounted:
+            return
+        # Use screen.query_one instead of app.query_one for modal support
+        try:
+            self.screen.query_one(self.picker_mount).mount(self.dialog)
+            self._dialog_mounted = True
+        except Exception:
+            pass
 
     def _poll_dialog_state(self) -> None:
         """Periodically check if dialog was closed and collapse mount."""

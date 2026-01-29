@@ -43,7 +43,6 @@ class AcquisitionSessionModal(FormModal):
             yield Static(title, classes="header")
             with VerticalScroll(id="dialog_scroll"):
                 imaging_date = self._coerce_date(self.initial_data.get("imaging_date"))
-                yield Static("", id="session_datepicker_mount")
                 with Horizontal(classes="form-row"):
                     yield Label("Imaging date:")
                     yield DateSelect(
@@ -51,6 +50,7 @@ class AcquisitionSessionModal(FormModal):
                         date=imaging_date,
                         id="session_imaging_date",
                     )
+                yield Static("", id="session_datepicker_mount")
                 with Horizontal(classes="form-row"):
                     yield Label("Microscope:")
                     yield Input(
@@ -122,7 +122,7 @@ class AcquisitionSessionModal(FormModal):
             with Horizontal(id="buttons"):
                 yield Button("Save (Ctrl+A)", variant="success", id="save")
                 if self._allow_remove:
-                    yield Button("Remove", variant="error", id="remove")
+                    yield Button("Remove (Ctrl+D)", variant="error", id="remove")
                 yield Button("Cancel (Esc)", variant="default", id="cancel")
 
     def _submit(self) -> None:

@@ -77,12 +77,12 @@ def compose_setup_tab(app: object) -> ComposeResult:
                         yield DataTable(id="collaborators_table", cursor_type="row")
                     with Horizontal(id="collaborator_actions"):
                         yield Button(
-                            "Add",
+                            "Add (Ctrl+A)",
                             id="add_collaborator",
                             variant="success",
                         )
                         yield Button(
-                            "Remove",
+                            "Remove (Ctrl+D)",
                             id="remove_collaborator",
                             variant="error",
                         )
@@ -109,17 +109,17 @@ def compose_setup_tab(app: object) -> ComposeResult:
                             yield DataTable(id="datasets_table", cursor_type="row")
                         with Horizontal(id="dataset_actions"):
                             yield Button(
-                                "Add",
+                                "Add (Ctrl+A)",
                                 id="add_dataset",
                                 variant="success",
                             )
                             yield Button(
-                                "Remove",
+                                "Remove (Ctrl+D)",
                                 id="remove_dataset",
                                 variant="error",
                             )
                             yield Button(
-                                "Sync",
+                                "Sync (Ctrl+V)",
                                 id="sync_dataset",
                                 variant="primary",
                             )
