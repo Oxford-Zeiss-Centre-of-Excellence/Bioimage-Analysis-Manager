@@ -846,7 +846,12 @@ TextArea.invalid {
 }
 
 #session_datepicker_mount {
-    height: 3;
+    height: 0;
+    overflow: hidden;
+}
+
+#session_datepicker_mount.expanded {
+    height: 18;
 }
 
 #billing_form DateSelect {

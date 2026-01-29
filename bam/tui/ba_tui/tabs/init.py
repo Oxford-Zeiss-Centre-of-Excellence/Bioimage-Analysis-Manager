@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
@@ -14,8 +16,13 @@ from textual.widgets import (
     TabPane,
 )
 
+from ..config import load_endpoint_options
 
-def compose_init_tab(app: object) -> ComposeResult:
+if TYPE_CHECKING:
+    from ..tui import BAApp
+
+
+def compose_init_tab(app: "BAApp") -> ComposeResult:
     with TabPane("Init (F1)", id="init"):
         with VerticalScroll(id="form"):
             yield Static("Project initialization")
@@ -23,7 +30,7 @@ def compose_init_tab(app: object) -> ComposeResult:
             with Horizontal(classes="form-row"):
                 yield Label("Project Name*:")
                 yield Input(
-                    app._defaults["project_name"],
+                    str(app._defaults.get("project_name", "")),
                     placeholder="Enter project name",
                     id="project_name",
                 )
@@ -31,7 +38,7 @@ def compose_init_tab(app: object) -> ComposeResult:
             with Horizontal(classes="form-row"):
                 yield Label("Analyst*:")
                 yield Input(
-                    app._defaults["analyst"],
+                    str(app._defaults.get("analyst", "")),
                     placeholder="Enter analyst name",
                     id="analyst",
                 )
@@ -40,7 +47,9 @@ def compose_init_tab(app: object) -> ComposeResult:
             with Horizontal(classes="form-row"):
                 yield Label("")
                 yield Checkbox(
-                    "Has Data", app._defaults["data_enabled"], id="data_enabled"
+                    "Has Data",
+                    bool(app._defaults.get("data_enabled", True)),
+                    id="data_enabled",
                 )
 
             # Data sections container (shown/hidden based on data_enabled)
@@ -51,20 +60,20 @@ def compose_init_tab(app: object) -> ComposeResult:
                 with Horizontal(classes="form-row"):
                     yield Label("Endpoint:")
                     yield Select(
-                        app._load_endpoint_options(),
-                        value=app._defaults["data_endpoint"] or "Local",
+                        load_endpoint_options(),
+                        value=str(app._defaults.get("data_endpoint", "Local")),
                         id="data_endpoint",
                     )
                     yield Checkbox(
                         "Locally Mounted",
-                        app._defaults["locally_mounted"],
+                        bool(app._defaults.get("locally_mounted", False)),
                         id="locally_mounted",
                     )
                 # Source path row with browse
                 with Horizontal(classes="form-row"):
                     yield Label("Source Path:")
                     yield Input(
-                        app._defaults["data_source"],
+                        str(app._defaults.get("data_source", "")),
                         placeholder="Enter source path",
                         id="data_source",
                     )
@@ -78,7 +87,7 @@ def compose_init_tab(app: object) -> ComposeResult:
                 with Horizontal(classes="form-row"):
                     yield Label("Cache Path:")
                     yield Input(
-                        app._defaults["data_local"],
+                        str(app._defaults.get("data_local", "")),
                         placeholder="Enter cache path",
                         id="data_local",
                     )
@@ -94,3 +103,6 @@ def compose_init_tab(app: object) -> ComposeResult:
 
             app._init_error = Static("", id="init_error")
             yield app._init_error
+
+
+from ..config import load_endpoint_options

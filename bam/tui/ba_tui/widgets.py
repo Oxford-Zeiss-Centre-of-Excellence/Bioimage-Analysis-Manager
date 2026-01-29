@@ -8,6 +8,8 @@ from textual_datepicker._date_select import DatePickerDialog
 
 
 class DateSelect(_DateSelect):
+    _dialog_was_visible = False
+
     def on_mount(self) -> None:
         """Override to query within screen context instead of app."""
         if self.dialog is None:
@@ -15,6 +17,21 @@ class DateSelect(_DateSelect):
             self.dialog.target = self
             # Use screen.query_one instead of app.query_one for modal support
             self.screen.query_one(self.picker_mount).mount(self.dialog)
+        # Start polling for dialog state changes
+        self.set_interval(0.2, self._poll_dialog_state)
+
+    def _poll_dialog_state(self) -> None:
+        """Periodically check if dialog was closed and collapse mount."""
+        if not self.dialog:
+            return
+
+        is_visible = self.dialog.display
+
+        # Only collapse on transition from visible to hidden
+        if self._dialog_was_visible and not is_visible:
+            self._toggle_mount_expanded(False)
+
+        self._dialog_was_visible = is_visible
 
     def _show_date_picker(self) -> None:
         """Override to use screen.query_one instead of app.query_one."""
@@ -56,20 +73,49 @@ class DateSelect(_DateSelect):
         # Collapse after selection
         self._toggle_mount_expanded(False)
 
-    def watch_dialog_display(self) -> None:
-        """Watch for dialog display changes to collapse when closed."""
-        if self.dialog and not self.dialog.display:
-            self._toggle_mount_expanded(False)
+    def on_blur(self) -> None:
+        """Collapse mount when DateSelect itself loses focus."""
+        self.set_timer(0.1, self._check_and_collapse)
 
     def on_descendant_blur(self, event) -> None:
         """Collapse mount when focus leaves the date picker area."""
-        # Check if dialog is now hidden
-        self.call_later(self._check_dialog_closed)
+        self.set_timer(0.1, self._check_and_collapse)
 
-    def _check_dialog_closed(self) -> None:
-        """Check if dialog closed and collapse mount."""
-        if self.dialog and not self.dialog.display:
+    def _check_and_collapse(self) -> None:
+        """Check if dialog should be collapsed after focus change."""
+        if not self.dialog:
+            return
+
+        # If dialog is already hidden, just collapse the mount
+        if not self.dialog.display:
             self._toggle_mount_expanded(False)
+            return
+
+        # Check if focus is still within the date picker area
+        try:
+            focused = self.screen.focused
+        except Exception:
+            focused = None
+
+        # If focus is on the DateSelect itself, keep open
+        if focused is self:
+            return
+
+        # If focus is on the dialog or its children, keep open
+        if focused is self.dialog:
+            return
+        if self.dialog.date_picker and focused is self.dialog.date_picker:
+            return
+
+        try:
+            if focused and focused in self.dialog.query("*"):
+                return
+        except Exception:
+            pass
+
+        # Focus is elsewhere - close the dialog and collapse
+        self.dialog.display = False
+        self._toggle_mount_expanded(False)
 
     def _toggle_mount_expanded(self, expand: bool) -> None:
         """Toggle the expanded class on the picker mount point."""
