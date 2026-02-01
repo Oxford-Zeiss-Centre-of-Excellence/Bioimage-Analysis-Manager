@@ -1059,6 +1059,22 @@ TextArea.invalid {
     margin-top: 1;
 }
 
+#artifacts_table {
+    height: 10;
+    width: 90%;
+}
+
+#artifact_actions {
+    align: center middle;
+    height: auto;
+    margin-top: 1;
+}
+
+#artifact_actions Button {
+    min-width: 14;
+    margin-right: 1;
+}
+
 #session_datepicker_mount {
     height: 0;
     overflow: hidden;

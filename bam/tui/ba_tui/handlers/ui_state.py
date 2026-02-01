@@ -9,6 +9,14 @@ from textual.widgets import TabbedContent, Tree
 if TYPE_CHECKING:
     from ..tui import BAApp
 
+# Sub-tab containers for each main tab that has sections
+SUB_TAB_IDS = {
+    "setup": "#setup_sections",
+    "science": "#science_sections",
+    "outputs": "#outputs_sections",
+    "manifest": "#manifest_sections",
+}
+
 
 class UIStateMixin:
     """Mixin for persisting UI state."""
@@ -38,6 +46,7 @@ class UIStateMixin:
             return
 
         tab_id = data.get("active_tab")
+        sub_tabs = data.get("sub_tabs", {})
         focus_id = data.get("focused_id")
 
         # Restore figure tree state
@@ -52,6 +61,16 @@ class UIStateMixin:
                 tabbed.active = str(tab_id)
             except Exception:
                 pass
+
+        # Restore sub-tabs for all main tabs that have sections
+        for main_tab, sub_tab_selector in SUB_TAB_IDS.items():
+            sub_tab_id = sub_tabs.get(main_tab)
+            if sub_tab_id:
+                try:
+                    sub_tabbed = self.query_one(sub_tab_selector, TabbedContent)
+                    sub_tabbed.active = str(sub_tab_id)
+                except Exception:
+                    pass
 
         if focus_id:
 
@@ -81,6 +100,16 @@ class UIStateMixin:
         if self.focused is not None and getattr(self.focused, "id", None):
             focused_id = str(self.focused.id)
 
+        # Collect sub-tab states for all main tabs that have sections
+        sub_tabs: dict[str, str] = {}
+        for main_tab, sub_tab_selector in SUB_TAB_IDS.items():
+            try:
+                sub_tabbed = self.query_one(sub_tab_selector, TabbedContent)
+                if sub_tabbed.active:
+                    sub_tabs[main_tab] = str(sub_tabbed.active)
+            except Exception:
+                pass
+
         # Collect figure tree state
         figure_expanded_ids: list[str] = []
         figure_selected_id: str | None = None
@@ -108,6 +137,8 @@ class UIStateMixin:
             "active_tab": active_tab,
             "focused_id": focused_id,
         }
+        if sub_tabs:
+            project_state["sub_tabs"] = sub_tabs
         if figure_expanded_ids:
             project_state["figure_expanded_ids"] = figure_expanded_ids
         if figure_selected_id:

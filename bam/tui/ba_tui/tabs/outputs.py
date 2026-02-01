@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Center, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
     Checkbox,
@@ -230,8 +230,9 @@ def compose_outputs_tab(app) -> ComposeResult:
                         "Artifacts",
                         classes="section-header",
                     )
-                    yield DataTable(id="artifacts_table", cursor_type="row")
-                    with Horizontal(classes="form-row"):
+                    with Center():
+                        yield DataTable(id="artifacts_table", cursor_type="row")
+                    with Horizontal(id="artifact_actions"):
                         yield Button("Add (A)", id="artifact_add", variant="success")
                         yield Button(
                             "Edit (Enter)", id="artifact_edit", variant="default"
