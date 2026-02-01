@@ -30,37 +30,47 @@ def compose_science_tab(app: object) -> ComposeResult:
             with TabPane("Acquisition", id="science_acquisition"):
                 with VerticalScroll(id="acquisition_form"):
                     yield Static(
-                        "Imaging Sessions (Ctrl+A: Add, Enter: Edit, Ctrl+D: Remove)",
+                        "Imaging Sessions",
                         classes="section-header",
                     )
                     with Center():
                         yield DataTable(id="acquisition_table", cursor_type="row")
                     with Horizontal(id="acquisition_actions"):
                         yield Button(
-                            "Add (Ctrl+A)",
+                            "Add (A)",
                             id="add_acquisition",
                             variant="success",
                         )
                         yield Button(
-                            "Remove (Ctrl+D)",
+                            "Edit (Enter)",
+                            id="edit_acquisition",
+                            variant="default",
+                        )
+                        yield Button(
+                            "Remove (D)",
                             id="remove_acquisition",
                             variant="error",
                         )
 
                     yield Static(
-                        "Channels (Ctrl+A: add, Ctrl+D: delete, Enter: edit)",
+                        "Channels",
                         classes="section-header",
                     )
                     with Center():
                         yield DataTable(id="channels_table", cursor_type="row")
                     with Horizontal(id="channel_actions"):
                         yield Button(
-                            "Add (Ctrl+A)",
+                            "Add (A)",
                             id="add_channel",
                             variant="success",
                         )
                         yield Button(
-                            "Remove (Ctrl+D)",
+                            "Edit (Enter)",
+                            id="edit_channel",
+                            variant="default",
+                        )
+                        yield Button(
+                            "Remove (D)",
                             id="remove_channel",
                             variant="error",
                         )
@@ -252,11 +262,12 @@ def compose_science_tab(app: object) -> ComposeResult:
                     with Center():
                         yield DataTable(id="hardware_table", cursor_type="row")
                     with Horizontal(classes="form-row", id="hardware_actions"):
+                        yield Button("Add (A)", id="hardware_add", variant="success")
                         yield Button(
-                            "Add (Ctrl+A)", id="hardware_add", variant="success"
+                            "Edit (Enter)", id="hardware_edit", variant="default"
                         )
                         yield Button(
-                            "Remove (Ctrl+D)", id="hardware_remove", variant="error"
+                            "Remove (D)", id="hardware_remove", variant="error"
                         )
                         yield Button(
                             "Detect Hardware", id="hardware_detect", variant="primary"

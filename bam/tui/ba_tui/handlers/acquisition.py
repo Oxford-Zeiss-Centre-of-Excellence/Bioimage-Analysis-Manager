@@ -137,16 +137,9 @@ class AcquisitionMixin:
         ):
             return
         self._store_channels_for_selected_session()
-        initial_data = None
-        try:
-            table = self.query_one("#acquisition_table", DataTable)
-            idx = table.cursor_row
-            if idx is not None and 0 <= idx < len(self._acquisition_rows):
-                initial_data = dict(self._acquisition_rows[idx])
-        except Exception:
-            initial_data = None
+        # Always use None for new acquisition (no pre-filled data)
         self.push_screen(
-            AcquisitionSessionModal(initial_data),
+            AcquisitionSessionModal(None),
             self._handle_new_acquisition,
         )
 

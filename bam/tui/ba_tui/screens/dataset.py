@@ -57,6 +57,9 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
         show_endpoint_custom = False
         show_format_custom = False
 
+        is_local_endpoint = False
+        locally_mounted = bool(self.initial_data.get("locally_mounted", False))
+
         if initial_endpoint:
             if initial_endpoint in endpoint_values:
                 endpoint_value = initial_endpoint
@@ -67,6 +70,8 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
                 show_endpoint_custom = True
 
         is_local_endpoint = str(endpoint_value).lower() == "local"
+        if is_local_endpoint:
+            locally_mounted = True
 
         if initial_format:
             if initial_format in format_values:
@@ -112,9 +117,7 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
                     yield Label("Locally mounted:")
                     yield Checkbox(
                         "Yes",
-                        True
-                        if is_local_endpoint
-                        else bool(self.initial_data.get("locally_mounted", False)),
+                        locally_mounted,
                         id="locally_mounted",
                         disabled=is_local_endpoint,
                     )
@@ -126,7 +129,12 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
                         id="source",
                         placeholder="Original data path",
                     )
-                    yield Button("Browse", id="browse_source", variant="primary")
+                    yield Button(
+                        "Browse",
+                        id="browse_source",
+                        variant="primary",
+                        disabled=not locally_mounted,
+                    )
                 yield OptionList(id="source_suggestions")
 
                 with Horizontal(classes="form-row"):
@@ -154,6 +162,20 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
                         value=format_value,
                         allow_blank=True,
                         id="format",
+                    )
+
+                with Horizontal(classes="form-row"):
+                    yield Label("Image quality:")
+                    yield Select(
+                        [
+                            ("", ""),
+                            ("Good", "Good"),
+                            ("Moderate", "Moderate"),
+                            ("Poor", "Poor"),
+                        ],
+                        value=str(self.initial_data.get("image_quality", "")),
+                        allow_blank=True,
+                        id="image_quality",
                     )
 
                 with Horizontal(
@@ -240,6 +262,7 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
                     checkbox.disabled = True
                 else:
                     checkbox.disabled = False
+                self._set_source_browse_enabled(checkbox.value)
             except Exception:
                 pass
         elif event.select.id == "format":
@@ -255,6 +278,7 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "locally_mounted":
+            self._set_source_browse_enabled(event.value)
             if not event.value:
                 self._hide_path_suggestions("source")
             return
@@ -304,6 +328,13 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
         start = Path.home()
         self.app.push_screen(DirectoryPickerScreen(start), self._handle_directory_pick)
 
+    def _set_source_browse_enabled(self, enabled: bool) -> None:
+        try:
+            button = self.query_one("#browse_source", Button)
+            button.disabled = not enabled
+        except Exception:
+            pass
+
     def _handle_directory_pick(self, path: str | None) -> None:
         if not path or not self._browse_target:
             self._browse_target = None
@@ -349,6 +380,9 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
             "local": self.query_one("#local", Input).value.strip(),
             "description": self.query_one("#description", Input).value.strip(),
             "format": data_format,
+            "image_quality": str(
+                self.query_one("#image_quality", Select).value or ""
+            ).strip(),
             "raw_size_gb": self.query_one("#raw_size_gb", Input).value.strip(),
             "raw_size_unit": str(self.query_one("#raw_size_unit", Select).value or ""),
             "compressed": bool(self.query_one("#compressed", Checkbox).value),

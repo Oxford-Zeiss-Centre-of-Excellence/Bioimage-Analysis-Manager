@@ -535,6 +535,215 @@ OtherListModal {
 }
 """
 
+
+FIGURE_NODE_MODAL_CSS = """
+FigureNodeModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 64;
+    height: 60%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 0;
+    align: right middle;
+}
+
+#dialog Label {
+    width: 16;
+    text-align: right;
+    padding-right: 1;
+}
+
+#dialog Input {
+    width: 1fr;
+}
+
+#dialog TextArea {
+    height: 4;
+}
+
+#dialog_scroll {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
+
+
+FIGURE_ELEMENT_MODAL_CSS = """
+FigureElementModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 78;
+    height: 80%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 0;
+    align: right middle;
+}
+
+#dialog Label {
+    width: 16;
+    text-align: right;
+    padding-right: 1;
+}
+
+#dialog Input, #dialog Select {
+    width: 1fr;
+}
+
+#dialog TextArea {
+    height: 4;
+}
+
+#dialog_scroll {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
+
+
+DELETE_CONFIRM_MODAL_CSS = """
+DeleteConfirmModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 52;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#buttons {
+    width: 100%;
+    height: auto;
+    align: center middle;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+"""
+
+
+ARTIFACT_MODAL_CSS = """
+ArtifactModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 76;
+    height: 70%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#dialog .form-row {
+    height: auto;
+    margin-bottom: 0;
+    align: right middle;
+}
+
+#dialog Label {
+    width: 18;
+    text-align: right;
+    padding-right: 1;
+}
+
+#dialog Input, #dialog Select {
+    width: 1fr;
+}
+
+#dialog_scroll {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+#buttons {
+    width: 100%;
+    align: center middle;
+    margin-top: 0;
+    height: auto;
+}
+
+#buttons Button {
+    margin: 0 1;
+}
+
+#artifact_path_suggestions {
+    height: 8;
+    display: none;
+    border: solid $primary;
+    margin: 0 0 0 18;
+}
+
+#artifact_path_suggestions.visible {
+    display: block;
+}
+"""
+
 APP_CSS = """
 #form {
     width: 90%;
@@ -750,10 +959,6 @@ TextArea.invalid {
     height: 4;
 }
 
-#artifact_list {
-    height: 1fr;
-}
-
 #manifest_sections {
     height: 1fr;
 }
@@ -879,6 +1084,15 @@ TextArea.invalid {
     height: 18;
 }
 
+#archive_datepicker_mount {
+    height: 0;
+    overflow: hidden;
+}
+
+#archive_datepicker_mount.expanded {
+    height: 18;
+}
+
 #billing_dates_row {
     height: auto;
 }
@@ -919,6 +1133,18 @@ TextArea.invalid {
 }
 
 #method_path_suggestions.visible {
+    display: block;
+}
+
+#archive_location_suggestions {
+    height: 8;
+    width: 100%;
+    display: none;
+    border: solid $primary;
+    margin: 0 0 0 14;
+}
+
+#archive_location_suggestions.visible {
     display: block;
 }
 """

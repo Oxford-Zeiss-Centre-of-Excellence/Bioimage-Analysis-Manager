@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
-from textual.widgets import TabbedContent
+from textual.widgets import TabbedContent, Tree
 
 if TYPE_CHECKING:
     from ..tui import BAApp
@@ -15,6 +15,8 @@ class UIStateMixin:
 
     _project_root: Path
     _ui_state_path: Path
+    _figure_expanded_ids: set[str]
+    _figure_selected_id: str | None
 
     def _get_project_state_key(self: "BAApp") -> str:
         """Return a unique key for this project's UI state."""
@@ -37,6 +39,12 @@ class UIStateMixin:
 
         tab_id = data.get("active_tab")
         focus_id = data.get("focused_id")
+
+        # Restore figure tree state
+        figure_expanded = data.get("figure_expanded_ids", [])
+        if isinstance(figure_expanded, list):
+            self._figure_expanded_ids = set(str(x) for x in figure_expanded)
+        self._figure_selected_id = data.get("figure_selected_id")
 
         if tab_id:
             try:
@@ -73,8 +81,37 @@ class UIStateMixin:
         if self.focused is not None and getattr(self.focused, "id", None):
             focused_id = str(self.focused.id)
 
+        # Collect figure tree state
+        figure_expanded_ids: list[str] = []
+        figure_selected_id: str | None = None
+        try:
+            tree = self.query_one("#figure_tree", Tree)
+            # Collect expanded node IDs
+            def collect_expanded(node) -> None:
+                if node.is_expanded and node.data:
+                    node_id = node.data.get("id")
+                    if node_id:
+                        figure_expanded_ids.append(str(node_id))
+                for child in node.children:
+                    collect_expanded(child)
+            collect_expanded(tree.root)
+            # Get selected node ID
+            if tree.cursor_node and tree.cursor_node.data:
+                sel_id = tree.cursor_node.data.get("id")
+                if sel_id:
+                    figure_selected_id = str(sel_id)
+        except Exception:
+            pass
+
         project_key = self._get_project_state_key()
-        project_state = {"active_tab": active_tab, "focused_id": focused_id}
+        project_state: dict[str, object] = {
+            "active_tab": active_tab,
+            "focused_id": focused_id,
+        }
+        if figure_expanded_ids:
+            project_state["figure_expanded_ids"] = figure_expanded_ids
+        if figure_selected_id:
+            project_state["figure_selected_id"] = figure_selected_id
 
         try:
             self._ui_state_path.parent.mkdir(parents=True, exist_ok=True)

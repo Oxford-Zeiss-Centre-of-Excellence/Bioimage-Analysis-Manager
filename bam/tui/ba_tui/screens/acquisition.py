@@ -130,8 +130,13 @@ class AcquisitionSessionModal(FormModal):
         modality = self.query_one("#session_modality", Select).value
         modality_value = "" if modality in (None, Select.BLANK) else str(modality)
 
+        # Get date and normalize to date only (remove time)
+        imaging_date_value = self.query_one("#session_imaging_date", DateSelect).value
+        if imaging_date_value and hasattr(imaging_date_value, "date"):
+            imaging_date_value = imaging_date_value.date()
+
         data: dict[str, object] = {
-            "imaging_date": self.query_one("#session_imaging_date", DateSelect).value,
+            "imaging_date": imaging_date_value,
             "microscope": microscope,
             "modality": modality_value,
             "objective": self.query_one("#session_objective", Input).value.strip(),

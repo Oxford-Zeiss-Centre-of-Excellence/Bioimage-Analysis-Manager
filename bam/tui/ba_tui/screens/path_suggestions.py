@@ -50,7 +50,7 @@ class PathSuggestionsMixin:
                 return
             self._hide_path_suggestions(input_id)
 
-    def on_option_list_blurred(self, event: OptionList.Blurred) -> None:
+    def on_option_list_blurred(self, event) -> None:
         if event.option_list.id in ("source_suggestions", "local_suggestions"):
             input_id = (
                 "source" if event.option_list.id == "source_suggestions" else "local"

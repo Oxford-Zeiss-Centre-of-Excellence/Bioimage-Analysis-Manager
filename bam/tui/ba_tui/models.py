@@ -237,6 +237,7 @@ class Dataset(BaseModel):
     locally_mounted: bool = False
     description: Optional[str] = None
     format: Optional[str] = None
+    image_quality: Optional[str] = None
     raw_size_gb: Optional[float] = None
     raw_size_unit: Optional[str] = None
     compressed: Optional[bool] = None
@@ -263,6 +264,7 @@ class Dataset(BaseModel):
             locally_mounted=bool(data.get("locally_mounted", False)),
             description=str(data.get("description", "")).strip() or None,
             format=str(data.get("format", "")).strip() or None,
+            image_quality=str(data.get("image_quality", "")).strip() or None,
             raw_size_gb=raw_size_value,
             raw_size_unit=str(data.get("raw_size_unit", "")).strip() or None,
             compressed=bool(data.get("compressed"))
@@ -288,6 +290,8 @@ class Dataset(BaseModel):
             payload["description"] = self.description
         if self.format:
             payload["format"] = self.format
+        if self.image_quality:
+            payload["image_quality"] = self.image_quality
         if self.raw_size_gb is not None:
             payload["raw_size_gb"] = self.raw_size_gb
         if self.raw_size_unit:
@@ -304,6 +308,7 @@ class Dataset(BaseModel):
 class Artifact(BaseModel):
     """A project deliverable/output tracked in the manifest registry."""
 
+    endpoint: Optional[str] = None
     path: str
     type: str = "unknown"  # figure | table | dataset | model | report | script
     status: str = "draft"  # draft | ready | delivered | published
@@ -521,70 +526,6 @@ class Billing(BaseModel):
 
 
 # =============================================================================
-# Quality Models
-# =============================================================================
-
-
-class QCCheck(BaseModel):
-    """A quality control check.
-
-    Text format (pipe-separated): name | status | date | notes
-    Example: Data integrity | passed | 2024-01-15 | All files verified
-    """
-
-    name: str
-    status: str = "pending"  # pending | passed | failed | skipped
-    check_date: Optional[date] = None
-    notes: str = ""
-
-    @classmethod
-    def from_pipe_string(cls, line: str) -> "QCCheck":
-        """Parse from pipe-separated string."""
-        parts = [p.strip() for p in line.split("|")]
-        check_date = None
-        if len(parts) > 2 and parts[2]:
-            try:
-                check_date = date.fromisoformat(parts[2])
-            except ValueError:
-                pass
-        return cls(
-            name=parts[0] if len(parts) > 0 else "",
-            status=parts[1] if len(parts) > 1 else "pending",
-            check_date=check_date,
-            notes=parts[3] if len(parts) > 3 else "",
-        )
-
-    def to_pipe_string(self) -> str:
-        """Convert to pipe-separated string."""
-        d = self.check_date.isoformat() if self.check_date else ""
-        return f"{self.name} | {self.status} | {d} | {self.notes}"
-
-
-class Quality(BaseModel):
-    """QC and validation tracking."""
-
-    status: str = "pending"  # pending | in-progress | passed | failed
-    checks: list[QCCheck] = Field(default_factory=list)
-    reviewer: str = ""
-    review_date: Optional[date] = None
-    notes: str = ""
-
-    @classmethod
-    def parse_checks_text(cls, text: str) -> list[QCCheck]:
-        """Parse QC checks from multiline text."""
-        checks = []
-        for line in text.strip().split("\n"):
-            line = line.strip()
-            if line and not line.startswith("#"):
-                checks.append(QCCheck.from_pipe_string(line))
-        return checks
-
-    def checks_to_text(self) -> str:
-        """Convert checks to multiline text."""
-        return "\n".join(c.to_pipe_string() for c in self.checks)
-
-
-# =============================================================================
 # Publication Models
 # =============================================================================
 
@@ -612,6 +553,7 @@ class Archive(BaseModel):
     """Long-term storage and preservation."""
 
     status: str = "active"  # active | pending-archive | archived
+    endpoint: Optional[str] = None
     archive_date: Optional[date] = None
     archive_location: str = ""
     retention_years: Optional[int] = None
@@ -740,7 +682,6 @@ class Manifest(BaseModel):
     hardware_profiles: list[HardwareProfile] = Field(default_factory=list)
     method: Optional[Method] = None
     billing: Optional[Billing] = None
-    quality: Optional[Quality] = None
     publication: Optional[Publication] = None
     archive: Optional[Archive] = None
     timeline: Optional[Timeline] = None

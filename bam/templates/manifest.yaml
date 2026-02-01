@@ -134,24 +134,6 @@ billing:
   notes: ""
 
 # ============================================================================
-# QUALITY - QC and validation tracking
-# ============================================================================
-quality:
-  status: pending             # pending | in-progress | passed | failed
-  checks:
-    - name: "Data integrity"
-      status: pending         # pending | passed | failed | skipped
-      date: null
-      notes: ""
-    - name: "Segmentation accuracy"
-      status: pending
-      date: null
-      notes: ""
-  reviewer: ""
-  review_date: null
-  notes: ""
-
-# ============================================================================
 # PUBLICATION - Publication and sharing information
 # ============================================================================
 publication:
@@ -267,6 +249,7 @@ publication:
 # ============================================================================
 archive:
   status: active              # active | pending-archive | archived
+  endpoint: ""               # Storage endpoint (reuse data endpoints)
   archive_date: null
   archive_location: ""        # e.g., institutional archive path
   retention_years: null       # Data retention period
@@ -299,6 +282,7 @@ timeline:
 # ============================================================================
 artifacts:
   - path: ""                  # Relative path from project root
+    endpoint: ""              # Storage endpoint (reuse data endpoints)
     type: figure              # figure | table | dataset | model | report | script
     status: draft             # draft | ready | delivered | published
     created: 2024-01-01

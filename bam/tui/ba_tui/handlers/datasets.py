@@ -37,7 +37,15 @@ class DatasetsMixin:
         try:
             table = self.query_one("#datasets_table", DataTable)
             table.clear(columns=True)
-            table.add_columns("Name", "Endpoint", "Source", "Local", "Format", "Size")
+            table.add_columns(
+                "Name",
+                "Endpoint",
+                "Source",
+                "Local",
+                "Format",
+                "Quality",
+                "Size",
+            )
             for idx, row in enumerate(self._dataset_rows):
                 table.add_row(
                     str(row.get("name", "")),
@@ -45,6 +53,7 @@ class DatasetsMixin:
                     self._truncate_path(str(row.get("source", ""))),
                     self._truncate_path(str(row.get("local", ""))),
                     str(row.get("format", "")),
+                    str(row.get("image_quality", "")),
                     self._format_dataset_size(row),
                     key=str(idx),
                 )
@@ -168,6 +177,9 @@ class DatasetsMixin:
             data_format = str(row.get("format", "")).strip()
             if data_format:
                 dataset["format"] = data_format
+            image_quality = str(row.get("image_quality", "")).strip()
+            if image_quality:
+                dataset["image_quality"] = image_quality
             raw_size = str(row.get("raw_size_gb", "")).strip()
             if raw_size:
                 try:

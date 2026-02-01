@@ -35,6 +35,8 @@ class PersistenceMixin:
     _acquisition_rows: list[dict[str, object]]
     _channel_rows: list[dict[str, str]]
     _hardware_profiles: list[dict[str, str | bool]]
+    _figure_tree_data: list[dict[str, object]]
+    _artifact_rows: list[dict[str, object]]
     _manifest: ManifestModel | None
     _init_error: Static | None
     _log_error: Static | None
@@ -62,6 +64,13 @@ class PersistenceMixin:
     _sanitize_manifest_dates: Any
     _collect_acquisition_sessions: Any
     _store_ui_state: Any
+    _populate_figure_tree: Any
+    _populate_artifacts_table: Any
+    _load_archive_defaults: Any
+    _load_publication_defaults: Any
+    _collect_publication: Any
+    _collect_archive: Any
+    _collect_artifacts: Any
 
     def _reload_form_from_manifest(self, manifest: ManifestModel) -> None:
         """Reload all form fields from manifest data."""
@@ -126,6 +135,7 @@ class PersistenceMixin:
                     "locally_mounted": dataset.locally_mounted,
                     "description": dataset.description or "",
                     "format": dataset.format or "",
+                    "image_quality": dataset.image_quality or "",
                     "raw_size_gb": ""
                     if dataset.raw_size_gb is None
                     else str(dataset.raw_size_gb),
@@ -141,6 +151,33 @@ class PersistenceMixin:
                 for dataset in manifest.datasets
             ]
             self._populate_datasets_table()
+        except Exception:
+            pass
+
+        # Outputs defaults
+        try:
+            self._load_publication_defaults(manifest)
+        except Exception:
+            pass
+
+        try:
+            self._load_archive_defaults(manifest)
+        except Exception:
+            pass
+
+        try:
+            self._figure_tree_data = self._serialize_figures(
+                manifest.publication.figures if manifest.publication else []
+            )
+            self._populate_figure_tree()
+        except Exception:
+            pass
+
+        try:
+            self._artifact_rows = [
+                artifact.model_dump() for artifact in manifest.artifacts
+            ]
+            self._populate_artifacts_table()
         except Exception:
             pass
 
@@ -619,6 +656,36 @@ class PersistenceMixin:
             except Exception:
                 pass
 
+            # Collect outputs data
+            try:
+                publication = self._collect_publication()
+                if publication:
+                    manifest_data["publication"] = publication
+                else:
+                    manifest_data.pop("publication", None)
+            except Exception:
+                pass
+
+            try:
+                archive = self._collect_archive()
+                if archive:
+                    manifest_data["archive"] = archive
+                else:
+                    manifest_data.pop("archive", None)
+            except Exception:
+                pass
+
+            try:
+                artifacts = self._collect_artifacts()
+                if artifacts:
+                    manifest_data["artifacts"] = [
+                        artifact.model_dump() for artifact in artifacts
+                    ]
+                else:
+                    manifest_data.pop("artifacts", None)
+            except Exception:
+                pass
+
             # Collect hardware profiles
             if self._hardware_profiles:
                 manifest_data["hardware_profiles"] = self._hardware_profiles
@@ -669,7 +736,6 @@ class PersistenceMixin:
             "acquisition",
             "tools",
             "billing",
-            "quality",
             "publication",
             "archive",
             "timeline",
@@ -753,7 +819,6 @@ class PersistenceMixin:
             "acquisition",
             "tools",
             "billing",
-            "quality",
             "publication",
             "archive",
             "timeline",

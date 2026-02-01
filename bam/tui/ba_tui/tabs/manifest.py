@@ -17,7 +17,6 @@ def compose_manifest_tab(_: object) -> ComposeResult:
                     "acquisition",
                     "tools",
                     "billing",
-                    "quality",
                     "publication",
                     "archive",
                     "timeline",

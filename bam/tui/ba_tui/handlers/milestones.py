@@ -30,6 +30,12 @@ class MilestonesMixin:
             pass
 
     def _format_date_cell(self, value: object) -> str:
+        from datetime import datetime
+
+        # Handle datetime objects (including pendulum.DateTime) - extract date only
+        if isinstance(value, datetime):
+            return date(value.year, value.month, value.day).isoformat()
+        # Handle pure date objects
         if isinstance(value, date):
             return value.isoformat()
         if value:

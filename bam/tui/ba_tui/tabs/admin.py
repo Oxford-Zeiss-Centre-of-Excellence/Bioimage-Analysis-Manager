@@ -109,19 +109,24 @@ def compose_admin_tab(app: object) -> ComposeResult:
             with TabPane("Timeline", id="admin_timeline"):
                 with VerticalScroll(id="timeline_form"):
                     yield Static(
-                        "Milestones (Ctrl+A: Add, Enter: Edit, Ctrl+D: Remove)",
+                        "Milestones",
                         classes="section-header",
                     )
                     with Center():
                         yield DataTable(id="milestones_table", cursor_type="row")
                     with Horizontal(id="milestone_actions"):
                         yield Button(
-                            "Add Milestone (Ctrl+A)",
+                            "Add (A)",
                             id="add_milestone",
                             variant="success",
                         )
                         yield Button(
-                            "Remove (Ctrl+D)",
+                            "Edit (Enter)",
+                            id="edit_milestone",
+                            variant="default",
+                        )
+                        yield Button(
+                            "Remove (D)",
                             id="remove_milestone",
                             variant="error",
                         )

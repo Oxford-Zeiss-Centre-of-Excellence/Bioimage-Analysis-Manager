@@ -22,7 +22,7 @@ from .scaffold import (
     ensure_worklog,
     register_artifact,
 )
-from .tui import BAApp
+from .tui import BAApp, _serialize_figures
 from .worklog import (
     append_worklog_entry,
     checkin_task,
@@ -515,6 +515,33 @@ def run_menu(args: argparse.Namespace) -> int:
                     "notes": getattr(m, "notes", ""),
                 }
                 for m in manifest.timeline.milestones
+            ]
+        # Add outputs defaults
+        if manifest.publication:
+            defaults["publication"] = {
+                "pub_status": manifest.publication.status,
+                "target_journal": manifest.publication.target_journal,
+                "manuscript_path": manifest.publication.manuscript_path,
+                "preprint_doi": manifest.publication.preprint_doi,
+                "published_doi": manifest.publication.published_doi,
+                "github_repo": manifest.publication.github_repo,
+                "zenodo_doi": manifest.publication.zenodo_doi,
+                "pub_notes": manifest.publication.notes,
+            }
+            defaults["figures"] = _serialize_figures(manifest.publication.figures)
+        if manifest.archive:
+            defaults["archive"] = {
+                "archive_status": manifest.archive.status,
+                "archive_date": manifest.archive.archive_date,
+                "archive_location": manifest.archive.archive_location,
+                "archive_endpoint": manifest.archive.endpoint or "",
+                "retention_years": manifest.archive.retention_years,
+                "backup_verified": manifest.archive.backup_verified,
+                "archive_notes": manifest.archive.notes,
+            }
+        if manifest.artifacts:
+            defaults["artifacts"] = [
+                artifact.model_dump() for artifact in manifest.artifacts
             ]
     app = BAApp(
         mode="menu",
