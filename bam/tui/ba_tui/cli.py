@@ -676,6 +676,60 @@ def run_menu(args: argparse.Namespace) -> int:
         return 1
 
 
+def run_validate(args: argparse.Namespace) -> int:
+    """Validate manifest.yaml schema."""
+    if args.manifest:
+        manifest_path = Path(args.manifest).expanduser().resolve()
+    else:
+        manifest_path = Path(".").resolve() / "manifest.yaml"
+
+    if not manifest_path.exists():
+        if not args.quiet:
+            emit({"status": "error", "message": f"Manifest not found: {manifest_path}"})
+        return 1
+
+    try:
+        manifest = load_manifest(manifest_path)
+        if manifest is None:
+            if not args.quiet:
+                emit(
+                    {"status": "error", "message": "Manifest is empty or invalid YAML"}
+                )
+            return 1
+
+        if not args.quiet:
+            emit(
+                {
+                    "status": "ok",
+                    "message": "Manifest validation passed",
+                    "manifest_path": str(manifest_path),
+                }
+            )
+        return 0
+
+    except ManifestValidationError as exc:
+        if not args.quiet:
+            emit(
+                {
+                    "status": "error",
+                    "message": "Manifest validation failed",
+                    "manifest_path": str(manifest_path),
+                    "errors": exc.errors,
+                }
+            )
+        return 1
+    except Exception as exc:
+        if not args.quiet:
+            emit(
+                {
+                    "status": "error",
+                    "message": f"Validation error: {str(exc)}",
+                    "manifest_path": str(manifest_path),
+                }
+            )
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bam",
@@ -845,6 +899,36 @@ Examples:
         help="Project root directory (default: current directory)",
     )
     manifest_parser.set_defaults(func=run_manifest)
+
+    # validate subcommand
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Validate manifest.yaml schema",
+        description="Check if manifest.yaml conforms to the expected schema.",
+        epilog="""
+Examples:
+  bam validate                       Validate manifest.yaml in current directory
+  bam validate --manifest path.yaml  Validate specific manifest file
+  bam validate --quiet               Quiet mode for CI (no output, only exit code)
+  
+Exit codes:
+  0 - Validation passed
+  1 - Validation failed
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    validate_parser.add_argument(
+        "--manifest",
+        metavar="FILE",
+        help="Path to manifest file (default: manifest.yaml in current directory)",
+    )
+    validate_parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Quiet mode - suppress output (useful for CI/CD)",
+    )
+    validate_parser.set_defaults(func=run_validate)
 
     return parser
 

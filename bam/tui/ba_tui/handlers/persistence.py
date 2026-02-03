@@ -1,10 +1,12 @@
 from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportGeneralTypeIssues=false
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 from textual.widgets import (
     Checkbox,
     DataTable,
@@ -16,9 +18,60 @@ from textual.widgets import (
 )
 
 from ..io import dump_manifest
-from ..models import Manifest, Manifest as ManifestModel
+from ..models import (
+    Manifest,
+    Manifest as ManifestModel,
+    ManifestValidationError,
+    raise_validation_error,
+)
 from ..scaffold import ensure_data_symlink, ensure_directories, ensure_worklog
 from ..widgets import DateSelect
+
+
+def validate_manifest_data(
+    data: dict[str, Any],
+) -> tuple[bool, str, ManifestModel | None]:
+    """Validate manifest data dictionary.
+
+    Returns:
+        (is_valid, error_message, manifest_object)
+    """
+    try:
+        manifest = Manifest.model_validate(data)
+        return (True, "", manifest)
+    except ValidationError as e:
+        error_details = []
+        for error in e.errors():
+            loc = ".".join(str(item) for item in error.get("loc", []))
+            msg = error.get("msg", "Invalid value")
+            error_details.append(f"  • {loc}: {msg}")
+        error_message = "Manifest validation failed:\n" + "\n".join(error_details)
+        return (False, error_message, None)
+    except Exception as e:
+        return (False, f"Validation error: {str(e)}", None)
+
+
+def create_manifest_backup(manifest_path: Path) -> Path | None:
+    """Create a timestamped backup of the manifest file.
+
+    Returns:
+        Path to backup file, or None if backup failed
+    """
+    if not manifest_path.exists():
+        return None
+
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        backup_path = manifest_path.with_suffix(f".{timestamp}.bak.yaml")
+
+        # Copy the file
+        import shutil
+
+        shutil.copy2(manifest_path, backup_path)
+
+        return backup_path
+    except Exception:
+        return None
 
 
 class PersistenceMixin:
@@ -692,6 +745,27 @@ class PersistenceMixin:
             else:
                 manifest_data.pop("hardware_profiles", None)
 
+            # Validate manifest data before saving
+            is_valid, error_msg, validated_manifest = validate_manifest_data(
+                manifest_data
+            )
+            if not is_valid:
+                self.notify(
+                    "Validation failed. Please fix errors before saving.",
+                    severity="error",
+                )
+                self.notify(error_msg, severity="warning", timeout=10)
+                return
+
+            # Create backup before saving
+            backup_path = create_manifest_backup(manifest_path)
+            if backup_path:
+                self.notify(
+                    f"Backup created: {backup_path.name}",
+                    severity="information",
+                    timeout=3,
+                )
+
             # Save the updated manifest
             ensure_directories(self._project_root)
             ensure_worklog(self._project_root)
@@ -752,10 +826,26 @@ class PersistenceMixin:
             return
 
         try:
-            manifest = Manifest.model_validate(
-                {k: v for k, v in sections.items() if v is not None}
-            )
+            manifest_data = {k: v for k, v in sections.items() if v is not None}
+
+            # Validate before saving
+            is_valid, error_msg, manifest = validate_manifest_data(manifest_data)
+            if not is_valid:
+                self.notify("Validation failed. Please fix errors.", severity="error")
+                self.notify(error_msg, severity="warning", timeout=10)
+                return
+
             manifest_path = self._project_root / "manifest.yaml"
+
+            # Create backup before saving
+            backup_path = create_manifest_backup(manifest_path)
+            if backup_path:
+                self.notify(
+                    f"Backup created: {backup_path.name}",
+                    severity="information",
+                    timeout=3,
+                )
+
             dump_manifest(manifest_path, manifest)
             self.notify("Manifest saved", severity="information")
         except Exception as e:
