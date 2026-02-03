@@ -27,13 +27,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Keep a local copy for version-tracked updates:
 
 ```bash
-git clone <repo-url> ~/repos/bam
-```
+cd <repo-dir>
+git clone git@github.com:Oxford-Zeiss-Centre-of-Excellence/Bioimage-Analysis-Manager.git
 
 ### 2. Install CLI globally
 
 ```bash
-uv tool install ~/repos/bam/bam/tui
+cd Bioimage-Analysis-Manager
+uv tool install ./bam/tui
 ```
 
 Verify:
@@ -48,7 +49,7 @@ Symlink the plugin for Claude Code discovery:
 
 ```bash
 mkdir -p ~/.claude/plugins
-ln -s ~/repos/bam/bam ~/.claude/plugins/bam
+ln -s <repo-dir>/Bioimage-Analysis-Manager/bam ~/.claude/plugins/bam
 ```
 
 Hub directory (`~/.ba-hub/`) is created automatically on first use.
@@ -56,9 +57,9 @@ Hub directory (`~/.ba-hub/`) is created automatically on first use.
 ### Updating
 
 ```bash
-cd ~/repos/bam
+cd <repo-dir>/Bioimage-Analysis-Manager
 git pull
-uv tool install --reinstall ~/repos/bam/bam/tui
+uv tool install --reinstall ./bam/tui
 ```
 
 ### Development install
@@ -66,7 +67,7 @@ uv tool install --reinstall ~/repos/bam/bam/tui
 For local development with live changes:
 
 ```bash
-cd ~/repos/bam/bam/tui
+cd <repo-dir>/Bioimage-Analysis-Manager/bam/tui
 uv tool install -e .
 ```
 

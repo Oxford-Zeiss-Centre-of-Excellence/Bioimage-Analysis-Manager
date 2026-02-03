@@ -41,8 +41,8 @@ data_formats:
 # Collaborator Roles
 collaborator_roles:
   - PI
+  - Postdoc
   - Students
-  - Others
 
 # Status Options
 project_status:

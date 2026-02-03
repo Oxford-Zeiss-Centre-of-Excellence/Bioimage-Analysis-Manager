@@ -750,6 +750,15 @@ class PersistenceMixin:
                 manifest_data
             )
             if not is_valid:
+                # Create backup of corrupted data before rejecting
+                backup_path = create_manifest_backup(manifest_path)
+                if backup_path:
+                    self.notify(
+                        f"Backup created: {backup_path.name}",
+                        severity="information",
+                        timeout=3,
+                    )
+
                 self.notify(
                     "Validation failed. Please fix errors before saving.",
                     severity="error",
@@ -757,16 +766,7 @@ class PersistenceMixin:
                 self.notify(error_msg, severity="warning", timeout=10)
                 return
 
-            # Create backup before saving
-            backup_path = create_manifest_backup(manifest_path)
-            if backup_path:
-                self.notify(
-                    f"Backup created: {backup_path.name}",
-                    severity="information",
-                    timeout=3,
-                )
-
-            # Save the updated manifest
+            # Save the validated manifest
             ensure_directories(self._project_root)
             ensure_worklog(self._project_root)
 
@@ -830,22 +830,26 @@ class PersistenceMixin:
 
             # Validate before saving
             is_valid, error_msg, manifest = validate_manifest_data(manifest_data)
+            manifest_path = self._project_root / "manifest.yaml"
+
             if not is_valid:
+                # Create backup of corrupted existing manifest before rejecting save
+                backup_path = create_manifest_backup(manifest_path)
+                if backup_path:
+                    self.notify(
+                        f"Backup created: {backup_path.name}",
+                        severity="information",
+                        timeout=3,
+                    )
+
                 self.notify("Validation failed. Please fix errors.", severity="error")
                 self.notify(error_msg, severity="warning", timeout=10)
                 return
 
-            manifest_path = self._project_root / "manifest.yaml"
-
-            # Create backup before saving
-            backup_path = create_manifest_backup(manifest_path)
-            if backup_path:
-                self.notify(
-                    f"Backup created: {backup_path.name}",
-                    severity="information",
-                    timeout=3,
-                )
-
+            # Save the validated manifest (no backup needed - data is valid)
+            assert (
+                manifest is not None
+            )  # Type guard: manifest is always non-None when is_valid=True
             dump_manifest(manifest_path, manifest)
             self.notify("Manifest saved", severity="information")
         except Exception as e:
