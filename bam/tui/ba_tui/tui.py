@@ -49,7 +49,7 @@ from .config import (
     load_endpoint_options,
     load_role_options,
 )
-from .models import Artifact, FigureElement, FigureNode, LogEntry, Manifest
+from .models import Artifact, FigureElement, FigureNode, Manifest
 from .screens import (
     AcquisitionSessionModal,
     ArtifactModal,
@@ -59,6 +59,7 @@ from .screens import (
     DatasetModal,
     DeleteConfirmModal,
     DirectoryPickerScreen,
+    EditSessionModal,
     ExitConfirmScreen,
     FigureElementModal,
     FigureNodeModal,
@@ -66,8 +67,10 @@ from .screens import (
     MilestoneModal,
     NewManifestConfirmScreen,
     ResetConfirmScreen,
+    SessionNoteModal,
+    TaskModal,
 )
-from .styles import APP_CSS
+from .styles import APP_CSS, LOG_TAB_CSS
 from .widgets import DateSelect
 from .utils import detect_git_remote
 from .tabs.admin import compose_admin_tab
@@ -177,7 +180,7 @@ class BAApp(
     TabNavigationMixin,
     App[dict[str, object] | None],
 ):
-    CSS = APP_CSS
+    CSS = APP_CSS + LOG_TAB_CSS
 
     BINDINGS = [
         Binding("ctrl+n", "new_manifest", "New", show=True, priority=True),
@@ -195,6 +198,13 @@ class BAApp(
         Binding("f5", "show_tab_5", "", show=False),
         Binding("f6", "show_tab_6", "", show=False),
         Binding("f7", "show_tab_7", "", show=False),
+        Binding("a", "worklog_new_task", "", show=False),
+        Binding("i", "worklog_check_in", "", show=False),
+        Binding("o", "worklog_check_out", "", show=False),
+        Binding("n", "worklog_add_note", "", show=False),
+        Binding("c", "worklog_complete", "", show=False),
+        Binding("d", "worklog_delete", "", show=False),
+        Binding("enter", "worklog_edit", "", show=False),
     ]
 
     def __init__(
@@ -210,7 +220,7 @@ class BAApp(
         data_source: str = "",
         data_local: str = "",
         locally_mounted: bool = False,
-        worklog_entries: Optional[list[LogEntry]] = None,
+        worklog_entries: Optional[list] = None,  # Legacy, not used anymore
         task_types: Optional[list[dict[str, str]]] = None,
         idea_title: str = "",
         artifacts: Optional[list[Artifact]] = None,
@@ -242,7 +252,7 @@ class BAApp(
         self._init_error: Optional[Static] = None
         self._log_error: Optional[Static] = None
         self._syncing = False
-        self._worklog_entries: list[LogEntry] = worklog_entries or []
+        self._worklog_entries: list = worklog_entries or []  # Legacy, not used anymore
         self._task_types = task_types or []
         self._last_click_time: float = 0.0
         self._last_click_row: tuple[str, object] | None = None
@@ -502,7 +512,26 @@ class BAApp(
                 self._apply_ui_state()
 
         self._refresh_init_validation()
-        self._refresh_worklog_lists()
+
+        # Initialize new task-based worklog system
+        self._init_worklog()
+
+        # Migrate from old CSV if needed
+        from .worklog import migrate_csv_to_yaml, init_worklog_manifest_section
+
+        migrated = migrate_csv_to_yaml(self._project_root)
+        if migrated:
+            self.notify(
+                "Worklog migrated from CSV to new task-based format",
+                severity="information",
+            )
+
+        # Initialize manifest section
+        init_worklog_manifest_section(self._project_root)
+
+        # Load worklog data
+        self._load_worklog_data()
+
         self._load_manifest_sections()
         self.set_interval(1, self._tick_worklog)
         self.set_interval(1, self._poll_method_preview)
@@ -641,10 +670,7 @@ class BAApp(
             ),
             "archive_browse": lambda: self._open_directory_picker("archive_location"),
             "idea_cancel": lambda: self.exit(None),
-            "task_add": self._add_task,
-            "task_checkout": self._checkout_task,
-            "task_pause": self._toggle_pause_task,
-            "task_set_status": self._set_task_status,
+            # Old log tab buttons removed - using new task-based system
             "fig_add_root": self._handle_fig_add_root,
             "fig_add_child": self._handle_fig_add_child,
             "fig_add_element": self._handle_fig_add_element,
@@ -659,10 +685,26 @@ class BAApp(
             "edit_milestone": self._edit_selected_milestone,
             "edit_channel": self._edit_selected_channel,
             "hardware_edit": self._edit_selected_hardware,
+            # New task-based worklog handlers (non-async wrapper)
+            "new_task_btn": lambda: self.run_worker(self._handle_new_task()),
+            "check_in_btn": lambda: self.run_worker(self._handle_check_in()),
+            "check_out_btn": lambda: self.run_worker(self._handle_check_out()),
+            "add_note_btn": lambda: self.run_worker(self._handle_add_note()),
+            "edit_btn": lambda: self.run_worker(self._handle_edit()),
+            "complete_btn": lambda: self.run_worker(self._handle_complete()),
+            "delete_btn": lambda: self.run_worker(self._handle_delete()),
         }
-        handler = handlers.get(button_id)
-        if handler:
-            handler()
+        # Check for dynamic session buttons
+        if button_id.startswith("session_check_out_"):
+            task_id = button_id.replace("session_check_out_", "")
+            self.run_worker(self._handle_session_check_out(task_id))
+        elif button_id.startswith("session_add_note_"):
+            task_id = button_id.replace("session_add_note_", "")
+            self.run_worker(self._handle_session_add_note(task_id))
+        else:
+            handler = handlers.get(button_id)
+            if handler:
+                handler()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "message":
@@ -817,12 +859,14 @@ class BAApp(
         element_data = {
             "type": "element",
             "id": new_id,
+            "locally_mounted": data.get("locally_mounted", True),
             "output_path": data.get("output_path", ""),
             "source_type": data.get("source_type", ""),
             "source_ref": data.get("source_ref", ""),
             "input_files": data.get("input_files", []),
             "parameters": data.get("parameters", ""),
             "status": data.get("status", ""),
+            "expected_delivery_date": data.get("expected_delivery_date"),
             "description": data.get("description", ""),
         }
         children = parent.get("children")
@@ -855,12 +899,14 @@ class BAApp(
                 {
                     "type": "element",
                     "id": edited_id,
+                    "locally_mounted": data.get("locally_mounted", True),
                     "output_path": data.get("output_path", ""),
                     "source_type": data.get("source_type", ""),
                     "source_ref": data.get("source_ref", ""),
                     "input_files": data.get("input_files", []),
                     "parameters": data.get("parameters", ""),
                     "status": data.get("status", ""),
+                    "expected_delivery_date": data.get("expected_delivery_date"),
                     "description": data.get("description", ""),
                 }
             )
@@ -891,6 +937,84 @@ class BAApp(
         except ValueError:
             return
         self._populate_figure_tree(expand_to_id=parent_id)
+
+    def _update_figure_info_box(self, node) -> None:
+        """Update the figure info box with details of the selected node."""
+        try:
+            info_content = self.query_one("#figure_info_content", Static)
+
+            if not node or not node.data:
+                info_content.update("Select a figure item to view details")
+                return
+
+            data = node.data
+            node_type = data.get("type", "")
+
+            # Build hierarchy path
+            path_parts = []
+            current = node
+            while current and current.data:
+                node_id = current.data.get("id", "")
+                if node_id:
+                    path_parts.insert(0, node_id)
+                current = current.parent
+
+            # Remove "Figures" root from path
+            if path_parts and path_parts[0] == "Figures":
+                path_parts = path_parts[1:]
+
+            hierarchy_path = " / ".join(path_parts) if path_parts else "N/A"
+
+            if node_type == "element":
+                # Format element info
+                title_section = f"[b cyan]Element: {data.get('id', 'N/A')}[/b cyan]\n[dim]{hierarchy_path}[/dim]"
+                lines = []
+                lines.append(f"[center]{title_section}[/center]\n")
+                lines.append(f"Type:\n  Element (leaf node)\n")
+                lines.append(f"Output path:\n  {data.get('output_path', 'N/A')}\n")
+                lines.append(f"Source type:\n  {data.get('source_type', 'N/A')}\n")
+                lines.append(f"Source ref:\n  {data.get('source_ref', 'N/A')}\n")
+
+                input_files = data.get("input_files", [])
+                if input_files:
+                    files_str = ", ".join(str(f) for f in input_files)
+                    lines.append(f"Input files:\n  {files_str}\n")
+                else:
+                    lines.append("Input files:\n  None\n")
+
+                lines.append(f"Parameters:\n  {data.get('parameters', 'N/A')}\n")
+                lines.append(f"Status:\n  {data.get('status', 'N/A')}\n")
+
+                delivery_date = data.get("expected_delivery_date")
+                if delivery_date:
+                    lines.append(f"Expected delivery:\n  {delivery_date}\n")
+                else:
+                    lines.append("Expected delivery:\n  Not set\n")
+
+                description = data.get("description", "")
+                if description:
+                    lines.append(f"Description:\n  {description}")
+
+                info_content.update("".join(lines))
+            else:
+                # Format node (figure/panel) info
+                title_section = f"[b green]Figure/Panel: {data.get('id', 'N/A')}[/b green]\n[dim]{hierarchy_path}[/dim]"
+                lines = []
+                lines.append(f"[center]{title_section}[/center]\n")
+                lines.append(f"Type:\n  Container node\n")
+                lines.append(f"Title:\n  {data.get('title', 'N/A')}\n")
+
+                description = data.get("description", "")
+                if description:
+                    lines.append(f"Description:\n  {description}\n")
+
+                children = data.get("children", [])
+                if children:
+                    lines.append(f"Children:\n  {len(children)}")
+
+                info_content.update("".join(lines))
+        except Exception:
+            pass
 
     def _serialize_figures(self, figures) -> list[dict[str, object]]:
         return _serialize_figures(figures)
@@ -1061,15 +1185,19 @@ class BAApp(
         if select_id and select_id in id_to_node:
             try:
                 target_node = id_to_node[select_id]
-                # Expand all ancestors
+                # Expand all ancestors to make the target visible
                 parent = target_node.parent
                 while parent is not None:
                     parent.expand()
                     parent = parent.parent
-                # Select the target node
-                tree.select_node(target_node)
+                # Expand the target node if it's not an element
                 if target_node.data and target_node.data.get("type") != "element":
                     target_node.expand()
+                # Select and move cursor to the target node
+                tree.select_node(target_node)
+                tree.move_cursor(target_node)
+                # Trigger the info box update by posting highlighted event
+                self._update_figure_info_box(target_node)
             except Exception:
                 pass
 
@@ -1272,22 +1400,25 @@ class BAApp(
                 suggestions.remove_class("visible")
                 self._archive_path_suggestions_visible = False
                 return
-            entries: list[str] = []
+            entries: list[tuple[str, str]] = []
             try:
+                # Collect both directories and files
                 for entry in sorted(search_dir.iterdir()):
-                    if entry.is_dir():
-                        name = entry.name
-                        if not prefix or name.lower().startswith(prefix):
-                            entries.append(str(entry))
-                            if len(entries) >= 10:
-                                break
+                    name = entry.name
+                    if not prefix or name.lower().startswith(prefix):
+                        if entry.is_dir():
+                            entries.append((str(entry), f"📁 {name}/"))
+                        else:
+                            entries.append((str(entry), f"📄 {name}"))
+                        if len(entries) >= 20:
+                            break
             except PermissionError:
                 pass
             if entries:
                 from textual.widgets.option_list import Option
 
-                for entry in entries:
-                    suggestions.add_option(Option(entry))
+                for entry_path, display_name in entries:
+                    suggestions.add_option(Option(display_name, id=entry_path))
                 suggestions.add_class("visible")
                 self._archive_path_suggestions_visible = True
             else:
@@ -1514,7 +1645,12 @@ class BAApp(
                     input_widget = self.query_one(
                         f"#{self._active_method_input}", Input
                     )
-                    selected = str(event.option.prompt)
+                    # Use the option id which contains the full path
+                    selected = (
+                        str(event.option.id)
+                        if event.option.id
+                        else str(event.option.prompt)
+                    )
                     input_widget.value = selected
                     self._hide_method_path_suggestions()
                     input_widget.focus()
@@ -1535,7 +1671,12 @@ class BAApp(
         elif event.option_list.id == "archive_location_suggestions":
             try:
                 input_widget = self.query_one("#archive_location", Input)
-                selected = str(event.option.prompt)
+                # Use the option id which contains the full path
+                selected = (
+                    str(event.option.id)
+                    if event.option.id
+                    else str(event.option.prompt)
+                )
                 input_widget.value = selected
                 self._hide_archive_path_suggestions()
                 input_widget.focus()
@@ -1952,6 +2093,23 @@ class BAApp(
     def _open_directory_picker(self, target_input_id: str) -> None:
         self._browse_target = target_input_id
         start = Path.home()
+
+        # Check if input has a current value and use it as starting path
+        try:
+            input_widget = self.query_one(f"#{target_input_id}", Input)
+            current_value = input_widget.value.strip()
+            if current_value:
+                current_path = Path(current_value).expanduser().resolve()
+                if current_path.exists():
+                    # If it's a file, start from parent directory
+                    if current_path.is_file():
+                        start = current_path.parent
+                    # If it's a directory, start from that directory
+                    elif current_path.is_dir():
+                        start = current_path
+        except Exception:
+            pass
+
         self.push_screen(DirectoryPickerScreen(start), self._handle_directory_pick)
 
     def _set_archive_browse_enabled(self, enabled: bool) -> None:
@@ -2058,3 +2216,58 @@ class BAApp(
             return
         # Start editing when Enter is pressed or cell is clicked
         self._edit_collaborator_cell()
+
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        """Handle tree node highlighting (cursor movement)."""
+        try:
+            tree = event.control
+            if hasattr(tree, "id") and tree.id == "figure_tree":
+                self._update_figure_info_box(event.node)
+            elif hasattr(tree, "id") and tree.id == "task_tree":
+                # Handle task tree keyboard navigation
+                if hasattr(event.node, "data"):
+                    self._on_tree_node_selected(event.node)
+        except Exception:
+            pass
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle tree node selection for task worklog."""
+        try:
+            tree = event.control  # Use control instead of tree
+            if hasattr(tree, "id") and tree.id == "task_tree":
+                # Debug: print type of event.node
+                actual_node = event.node
+                # Make sure we have the actual TreeNode, not the event
+                if hasattr(actual_node, "data"):
+                    self._on_tree_node_selected(actual_node)
+        except Exception as e:
+            # Silently ignore - not all trees are task trees
+            pass
+
+    def action_worklog_new_task(self) -> None:
+        """Keyboard shortcut for new task (A key)."""
+        self.run_worker(self._handle_new_task())
+
+    def action_worklog_check_in(self) -> None:
+        """Keyboard shortcut for check in (I key)."""
+        self.run_worker(self._handle_check_in())
+
+    def action_worklog_check_out(self) -> None:
+        """Keyboard shortcut for check out (O key)."""
+        self.run_worker(self._handle_check_out())
+
+    def action_worklog_add_note(self) -> None:
+        """Keyboard shortcut for add note (N key)."""
+        self.run_worker(self._handle_add_note())
+
+    def action_worklog_complete(self) -> None:
+        """Keyboard shortcut for complete task (C key)."""
+        self.run_worker(self._handle_complete())
+
+    def action_worklog_delete(self) -> None:
+        """Keyboard shortcut for delete task/session (D key)."""
+        self.run_worker(self._handle_delete())
+
+    def action_worklog_edit(self) -> None:
+        """Keyboard shortcut for edit task/session (Enter key)."""
+        self.run_worker(self._handle_edit())

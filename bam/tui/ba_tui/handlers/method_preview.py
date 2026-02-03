@@ -136,16 +136,20 @@ class MethodPreviewMixin:
                 return
 
             entries = []
-            for entry in search_dir.iterdir():
+            for entry in sorted(search_dir.iterdir()):
                 name = entry.name
                 if prefix and not name.lower().startswith(prefix):
                     continue
-                entries.append(str(entry))
-            entries = sorted(entries)[:10]
+                if entry.is_dir():
+                    entries.append((str(entry), f"📁 {name}/"))
+                else:
+                    entries.append((str(entry), f"📄 {name}"))
+                if len(entries) >= 20:
+                    break
 
             if entries:
-                for entry in entries:
-                    suggestions.add_option(Option(entry))
+                for entry_path, display_name in entries:
+                    suggestions.add_option(Option(display_name, id=entry_path))
                 suggestions.add_class("visible")
                 self._method_path_suggestions_visible = True
                 self._active_method_input = input_id

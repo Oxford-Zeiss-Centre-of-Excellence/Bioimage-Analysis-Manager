@@ -27,14 +27,17 @@ class HardwareMixin:
         try:
             table = self.query_one("#hardware_table", DataTable)
             table.clear(columns=True)
-            table.add_columns("Name", "CPU", "Cores", "RAM", "GPU")
+            table.add_columns("Name", "CPU", "Cores", "RAM", "GPU", "GPU Count")
             for idx, row in enumerate(self._hardware_profiles):
+                gpu_count = row.get("gpu_count", 0)
+                gpu_count_str = str(gpu_count) if gpu_count > 0 else ""
                 table.add_row(
                     row.get("name", ""),
                     row.get("cpu", ""),
                     row.get("cores", ""),
                     row.get("ram", ""),
                     row.get("gpu", ""),
+                    gpu_count_str,
                     key=str(idx),
                 )
         except Exception:

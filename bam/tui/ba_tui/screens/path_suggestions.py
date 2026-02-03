@@ -67,7 +67,8 @@ class PathSuggestionsMixin:
             )
             try:
                 input_widget = self.query_one(f"#{input_id}", Input)
-                selected = str(event.option.prompt)
+                # Use the option id which contains the full path
+                selected = str(event.option.id) if event.option.id else str(event.option.prompt)
                 input_widget.value = selected
                 self._hide_path_suggestions(input_id)
                 input_widget.focus()
@@ -103,19 +104,22 @@ class PathSuggestionsMixin:
 
             entries = []
             try:
+                # Collect both directories and files
                 for entry in sorted(search_dir.iterdir()):
-                    if entry.is_dir():
-                        name = entry.name
-                        if not prefix or name.lower().startswith(prefix):
-                            entries.append(str(entry))
-                            if len(entries) >= 10:
-                                break
+                    name = entry.name
+                    if not prefix or name.lower().startswith(prefix):
+                        if entry.is_dir():
+                            entries.append((str(entry), f"📁 {name}/"))
+                        else:
+                            entries.append((str(entry), f"📄 {name}"))
+                        if len(entries) >= 20:
+                            break
             except PermissionError:
                 pass
 
             if entries:
-                for entry in entries:
-                    suggestions.add_option(Option(entry))
+                for entry_path, display_name in entries:
+                    suggestions.add_option(Option(display_name, id=entry_path))
                 suggestions.add_class("visible")
                 self._path_suggestions_visible[input_id] = True
                 self._active_path_input = input_id

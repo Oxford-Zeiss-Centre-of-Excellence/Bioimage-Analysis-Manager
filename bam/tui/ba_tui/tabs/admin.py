@@ -130,3 +130,7 @@ def compose_admin_tab(app: object) -> ComposeResult:
                             id="remove_milestone",
                             variant="error",
                         )
+                    yield Static(
+                        "💡 Milestones are client-facing deliverables and project deadlines shared in reports",
+                        classes="hint-text",
+                    )

@@ -712,16 +712,10 @@ class PersistenceMixin:
             self.notify(f"Save failed: {e}", severity="error", markup=False)
 
     def _save_log(self) -> None:
-        """Save worklog without exiting."""
-        from ..models import WorkLog
-        from ..worklog import save_worklog
-
-        try:
-            worklog = WorkLog(entries=self._worklog_entries)
-            save_worklog(self._project_root, worklog)
-            self.notify("Worklog saved", severity="information")
-        except Exception as e:
-            self.notify(f"Save failed: {e}", severity="error", markup=False)
+        """Save manifest (not tasks.yaml which is auto-saved on changes)."""
+        # Note: Worklog is auto-saved by worklog operations
+        # Ctrl+S should save the manifest, not the tasks
+        self._save_init()
 
     def _save_manifest(self) -> None:
         """Save manifest tab without exiting."""

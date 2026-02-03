@@ -95,6 +95,7 @@ class FigureElement(BaseModel):
     input_files: list[str] = Field(default_factory=list)
     parameters: Optional[str] = None  # freeform settings/commands
     status: FigureStatus = FigureStatus.draft
+    expected_delivery_date: Optional[date] = None
     version: int = 1
     description: Optional[str] = None
     created: date = Field(default_factory=date.today)
@@ -476,13 +477,17 @@ class HardwareProfile(BaseModel):
     """Hardware profile for a compute environment."""
 
     name: str
+    cluster_name: str = ""
+    other_cluster: str = ""
     cpu: str = ""
+    cores: str = ""
     ram: str = ""
     gpu: str = ""
-    notes: str = ""
-    is_cluster: bool = False
+    gpu_count: int = 0
     partition: str = ""
     node_type: str = ""
+    notes: str = ""
+    is_cluster: bool = False
 
 
 class Method(BaseModel):
@@ -630,44 +635,197 @@ class Hub(BaseModel):
 
 
 # =============================================================================
-# Worklog Models
+# Worklog Manifest Reference
 # =============================================================================
 
 
-class LogEntry(BaseModel):
-    checkin: datetime
-    checkout: Optional[datetime] = None
-    task: str
-    type: str = "analysis"
-    status: TaskStatus = TaskStatus.active
-    notes: Optional[str] = None
-    elapsed_seconds: int = 0
+class WorklogManifest(BaseModel):
+    """Worklog file reference in manifest."""
+
+    file_path: str = "log/tasks.yaml"
+    version: int = 2
+    created: Optional[date] = None
+    last_updated: Optional[date] = None
+
+
+# =============================================================================
+# Worklog Models (Task-Based Time Tracking)
+# =============================================================================
+
+
+class TaskCategory(str, Enum):
+    """Task category for time tracking and billing."""
+
+    development = "Development"
+    data_copying = "Data Copying"
+    execution = "Execution"
+    documentation = "Documentation"
+    meeting = "Meeting"
+    admin = "Admin"
+    learning = "Learning"
+    support = "Support"
+    other = "Other"
+
+
+class TaskSubCategory(str, Enum):
+    """Sub-categories for tasks (legacy - now loaded from config)."""
+
+    pipeline = "Pipeline"
+    script = "Script"
+    model = "Model"
+    plugin = "Plugin"
+    environment = "Environment"
+    training = "Training"
+    inference = "Inference"
+    processing = "Processing"
+    other = "Other"
+
+
+class TaskDifficulty(str, Enum):
+    """Task difficulty level."""
+
+    easy = "Easy"
+    medium = "Medium"
+    hard = "Hard"
+
+
+class RunStatus(str, Enum):
+    """Execution run status."""
+
+    queued = "Queued"
+    running = "Running"
+    completed = "Completed"
+    failed = "Failed"
+
+
+class LogTaskStatus(str, Enum):
+    """Task lifecycle status."""
+
+    active = "Active"
+    completed = "Completed"
+    archived = "Archived"
+
+
+class Session(BaseModel):
+    """A punch-in/punch-out work session."""
+
+    punch_in: datetime
+    punch_out: Optional[datetime] = None
+    note: Optional[str] = None
 
     def duration_seconds(self) -> int:
-        if self.status == TaskStatus.paused:
-            return self.elapsed_seconds
-        if self.status == TaskStatus.completed and self.checkout is not None:
-            delta = self.checkout - self.checkin
-            return int(delta.total_seconds()) + self.elapsed_seconds
-        delta = datetime.now() - self.checkin
-        return int(delta.total_seconds()) + self.elapsed_seconds
+        """Calculate session duration in seconds."""
+        if self.punch_out is None:
+            # Active session - calculate from punch_in to now
+            delta = datetime.now() - self.punch_in
+            return int(delta.total_seconds())
+        else:
+            delta = self.punch_out - self.punch_in
+            return int(delta.total_seconds())
+
+    def is_valid(self) -> bool:
+        """Check if session times are valid (punch_out > punch_in)."""
+        if self.punch_out is None:
+            return True
+        return self.punch_out > self.punch_in
+
+    def is_problematic(self) -> tuple[bool, str]:
+        """Check if session has issues (>24h, invalid times, etc.).
+
+        Returns:
+            (is_problematic, reason) tuple
+        """
+        # Check invalid times
+        if not self.is_valid():
+            return (True, "invalid_times")
+
+        # Check if no punch_out
+        if self.punch_out is None:
+            # Check if active session is >24h old
+            hours_since_punch_in = (
+                datetime.now() - self.punch_in
+            ).total_seconds() / 3600
+            if hours_since_punch_in > 24:
+                return (True, "no_punch_out_24h")
+            return (False, "")
+
+        # Check if duration >24h
+        duration_hours = self.duration_seconds() / 3600
+        if duration_hours > 24:
+            return (True, "duration_24h")
+
+        return (False, "")
+
+
+class Task(BaseModel):
+    """A work task/deliverable with multiple sessions."""
+
+    id: str
+    name: str
+    category: TaskCategory
+    sub_category: Optional[TaskSubCategory] = None
+    difficulty: Optional[TaskDifficulty] = None
+    status: LogTaskStatus = LogTaskStatus.active
+
+    # Execution-specific fields
+    data_path: Optional[str] = None
+    compute: Optional[str] = None
+    run_status: Optional[RunStatus] = None
+
+    sessions: list[Session] = Field(default_factory=list)
+    created: datetime = Field(default_factory=datetime.now)
+
+    def total_duration_seconds(self) -> int:
+        """Calculate total time across all sessions."""
+        return sum(session.duration_seconds() for session in self.sessions)
+
+    def active_session(self) -> Optional[Session]:
+        """Get currently active session (no punch_out)."""
+        for session in reversed(self.sessions):
+            if session.punch_out is None:
+                return session
+        return None
+
+    def is_active(self) -> bool:
+        """Check if task has an active session."""
+        return self.active_session() is not None
+
+    def problematic_sessions(self) -> list[tuple[int, Session, str]]:
+        """Get list of sessions with issues.
+
+        Returns:
+            List of (index, session, reason) tuples
+        """
+        problems = []
+        for idx, session in enumerate(self.sessions):
+            is_prob, reason = session.is_problematic()
+            if is_prob:
+                problems.append((idx, session, reason))
+        return problems
 
 
 class WorkLog(BaseModel):
-    entries: list[LogEntry] = Field(default_factory=list)
+    """Collection of tasks with sessions."""
 
-    def active_tasks(self) -> list[LogEntry]:
-        return [entry for entry in self.entries if entry.status == TaskStatus.active]
+    tasks: list[Task] = Field(default_factory=list)
 
-    def today_completed(self) -> list[LogEntry]:
-        today = date.today()
-        return [
-            entry
-            for entry in self.entries
-            if entry.status == TaskStatus.completed
-            and entry.checkout is not None
-            and entry.checkout.date() == today
-        ]
+    def active_tasks(self) -> list[Task]:
+        """Get tasks with active sessions."""
+        return [task for task in self.tasks if task.is_active()]
+
+    def get_task_by_id(self, task_id: str) -> Optional[Task]:
+        """Find task by ID."""
+        for task in self.tasks:
+            if task.id == task_id:
+                return task
+        return None
+
+    def all_problematic_sessions(self) -> int:
+        """Count all problematic sessions across all tasks."""
+        count = 0
+        for task in self.tasks:
+            count += len(task.problematic_sessions())
+        return count
 
 
 class Manifest(BaseModel):
@@ -687,6 +845,7 @@ class Manifest(BaseModel):
     timeline: Optional[Timeline] = None
     artifacts: list[Artifact] = Field(default_factory=list)
     hub: Optional[Hub] = None
+    worklog: Optional[WorklogManifest] = None
 
     @model_validator(mode="before")
     @classmethod

@@ -326,6 +326,23 @@ class DatasetModal(PathSuggestionsMixin, FormModal):
     def _open_directory_picker(self, target_input_id: str) -> None:
         self._browse_target = target_input_id
         start = Path.home()
+
+        # Check if input has a current value and use it as starting path
+        try:
+            input_widget = self.query_one(f"#{target_input_id}", Input)
+            current_value = input_widget.value.strip()
+            if current_value:
+                current_path = Path(current_value).expanduser().resolve()
+                if current_path.exists():
+                    # If it's a file, start from parent directory
+                    if current_path.is_file():
+                        start = current_path.parent
+                    # If it's a directory, start from that directory
+                    elif current_path.is_dir():
+                        start = current_path
+        except Exception:
+            pass
+
         self.app.push_screen(DirectoryPickerScreen(start), self._handle_directory_pick)
 
     def _set_source_browse_enabled(self, enabled: bool) -> None:

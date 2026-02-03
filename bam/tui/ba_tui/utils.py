@@ -6,17 +6,18 @@ import subprocess
 from pathlib import Path
 
 
-def detect_hardware() -> dict[str, str]:
+def detect_hardware() -> dict[str, str | int]:
     cpu = _detect_cpu() or platform.machine() or "Unknown"
     cores = _detect_cores()
     ram = _detect_ram()
 
-    gpu = _detect_gpu()
+    gpu, gpu_count = _detect_gpu()
     return {
         "cpu": cpu,
         "cores": cores,
         "ram": ram,
         "gpu": gpu,
+        "gpu_count": gpu_count,
     }
 
 
@@ -80,7 +81,12 @@ def _detect_cores() -> str:
     return ""
 
 
-def _detect_gpu() -> str:
+def _detect_gpu() -> tuple[str, int]:
+    """Detect GPU(s) and return (gpu_name, gpu_count).
+
+    Groups identical GPUs together and returns the count separately.
+    Returns: (gpu_description, gpu_count)
+    """
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
@@ -93,10 +99,26 @@ def _detect_gpu() -> str:
                 line.strip() for line in result.stdout.splitlines() if line.strip()
             ]
             if lines:
-                return f"{len(lines)}x " + ", ".join(lines)
+                # Group GPUs by name and count
+                from collections import Counter
+
+                gpu_counts = Counter(lines)
+
+                # Format grouped GPUs
+                gpu_parts = []
+                for gpu_name, count in gpu_counts.items():
+                    if count > 1:
+                        gpu_parts.append(f"{count}x {gpu_name}")
+                    else:
+                        gpu_parts.append(gpu_name)
+
+                gpu_description = ", ".join(gpu_parts)
+                total_count = len(lines)
+
+                return (gpu_description, total_count)
     except Exception:
-        return ""
-    return ""
+        return ("", 0)
+    return ("", 0)
 
 
 def detect_git_remote(project_root: Path) -> str:

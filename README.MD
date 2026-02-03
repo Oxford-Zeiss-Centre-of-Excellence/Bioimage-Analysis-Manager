@@ -70,6 +70,70 @@ cd ~/repos/bam/bam/tui
 uv tool install -e .
 ```
 
+## Configuration
+
+BAM supports customizable configuration for dropdown options, lists, and preferences throughout the application.
+
+### Configuration Locations
+
+Configuration is loaded in order of priority (highest to lowest):
+
+1. **Project-level**: `<project>/.bam/config.yaml` (project-specific overrides)
+2. **System-wide**: `~/.bam/config.yaml` (user-specific preferences)
+3. **Defaults**: Built-in defaults from `bam/tui/ba_tui/config_defaults.yaml`
+
+### Configuration Template
+
+The complete configuration template with all available options can be found at:
+```
+bam/tui/ba_tui/config_defaults.yaml
+```
+
+### Customizing Configuration
+
+1. **Copy the template**:
+   ```bash
+   # For system-wide config
+   mkdir -p ~/.bam
+   cp bam/tui/ba_tui/config_defaults.yaml ~/.bam/config.yaml
+   
+   # For project-level config
+   mkdir -p <project>/.bam
+   cp bam/tui/ba_tui/config_defaults.yaml <project>/.bam/config.yaml
+   ```
+
+2. **Edit the config file** to customize values:
+   ```yaml
+   # Example: Customize cluster options
+   clusters:
+     - BMRC
+     - ARC
+     - CCB
+     - My Custom Cluster
+     - Other
+   
+   # Example: Add custom software tools
+   software_tools:
+     - Fiji/ImageJ
+     - napari
+     - My Custom Tool
+   ```
+
+### Configurable Options
+
+The following options can be customized:
+
+- **Hardware/Clusters**: `clusters`, `compute_locations`
+- **Data**: `endpoints`, `data_formats`, `data_size_units`
+- **Status Options**: `project_status`, `milestone_status`, `publication_status`, `archive_status`, etc.
+- **Imaging**: `imaging_modalities`, `image_quality`
+- **Tools**: `programming_languages`, `software_tools`, `environment_types`, `cluster_packages`
+- **Tasks**: `task_categories`, `task_subcategories`, `task_difficulty`, `run_status`
+- **Artifacts**: `artifact_types`, `artifact_status`, `figure_element_sources`
+- **Collaborators**: `collaborator_roles`
+
+See `config_defaults.yaml` for the complete list and format of each option.
+
 ## Plugin Structure
 
 ```
@@ -187,20 +251,9 @@ my-project/
 └── README.md
 ```
 
-## Documentation
-
-- **Full specification:** [openspec/changes/add-ba-plugin/](openspec/changes/add-ba-plugin/)
-- **Design decisions:** [openspec/changes/add-ba-plugin/design.md](openspec/changes/add-ba-plugin/design.md)
-- **Implementation tasks:** [openspec/changes/add-ba-plugin/tasks.md](openspec/changes/add-ba-plugin/tasks.md)
-
 ## Development
 
 ```bash
-cd bam/tui
-pip install -e .
+uv tool install --editable bam/tui
 bam --help
 ```
-
-## License
-
-TBD

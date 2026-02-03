@@ -4,7 +4,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Input, Label, OptionList, Select, Static
+from textual.widgets import Button, Checkbox, Input, Label, OptionList, Select, Static
 from textual.widgets.option_list import Option
 
 from ..styles import ARTIFACT_MODAL_CSS
@@ -52,6 +52,8 @@ class ArtifactModal(FormModal):
         endpoint_custom = ""
         show_endpoint_custom = False
         endpoint_values = {value for _, value in self.endpoint_options}
+        locally_mounted = bool(self.initial_data.get("locally_mounted", True))
+
         if endpoint_value:
             if endpoint_value in endpoint_values:
                 show_endpoint_custom = endpoint_value.lower() == "other"
@@ -84,13 +86,22 @@ class ArtifactModal(FormModal):
                     )
 
                 with Horizontal(classes="form-row"):
+                    yield Label("Locally mounted:")
+                    yield Checkbox("Yes", locally_mounted, id="artifact_locally_mounted")
+
+                with Horizontal(classes="form-row"):
                     yield Label("Path*:")
                     yield Input(
                         str(self.initial_data.get("path", "")),
                         id="artifact_path",
                         placeholder="Artifact path",
                     )
-                    yield Button("Browse", id="artifact_browse", variant="primary")
+                    yield Button(
+                        "Browse",
+                        id="artifact_browse",
+                        variant="primary",
+                        disabled=not locally_mounted,
+                    )
                 yield OptionList(id="artifact_path_suggestions")
 
                 with Horizontal(classes="form-row"):
@@ -140,10 +151,30 @@ class ArtifactModal(FormModal):
             except Exception:
                 pass
 
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "artifact_locally_mounted":
+            self._set_browse_enabled(event.value)
+            if not event.value:
+                self._hide_path_suggestions()
+
+    def _set_browse_enabled(self, enabled: bool) -> None:
+        try:
+            button = self.query_one("#artifact_browse", Button)
+            button.disabled = not enabled
+        except Exception:
+            pass
+
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "artifact_path":
             if self.focused is event.input:
-                self._update_path_suggestions(event.value)
+                try:
+                    locally_mounted = self.query_one("#artifact_locally_mounted", Checkbox)
+                    if locally_mounted.value:
+                        self._update_path_suggestions(event.value)
+                    else:
+                        self._hide_path_suggestions()
+                except Exception:
+                    self._hide_path_suggestions()
             else:
                 self._hide_path_suggestions()
 
@@ -162,7 +193,8 @@ class ArtifactModal(FormModal):
         if event.option_list.id == "artifact_path_suggestions":
             try:
                 input_widget = self.query_one("#artifact_path", Input)
-                selected = str(event.option.prompt)
+                # Use the option id which contains the full path
+                selected = str(event.option.id) if event.option.id else str(event.option.prompt)
                 input_widget.value = selected
                 self._hide_path_suggestions()
                 input_widget.focus()
@@ -204,8 +236,26 @@ class ArtifactModal(FormModal):
 
     def _open_directory_picker(self, target_input_id: str) -> None:
         self._browse_target = target_input_id
+
+        # Check if input has a current value and use it as starting path
+        start_path = Path.home()
+        try:
+            input_widget = self.query_one(f"#{target_input_id}", Input)
+            current_value = input_widget.value.strip()
+            if current_value:
+                current_path = Path(current_value).expanduser().resolve()
+                if current_path.exists():
+                    # If it's a file, start from parent directory
+                    if current_path.is_file():
+                        start_path = current_path.parent
+                    # If it's a directory, start from that directory
+                    elif current_path.is_dir():
+                        start_path = current_path
+        except Exception:
+            pass
+
         self.app.push_screen(
-            DirectoryPickerScreen(Path.home()), self._handle_directory_pick
+            DirectoryPickerScreen(start_path), self._handle_directory_pick
         )
 
     def _handle_directory_pick(self, path: str | None) -> None:
@@ -236,20 +286,23 @@ class ArtifactModal(FormModal):
             if not search_dir.exists():
                 self._hide_path_suggestions()
                 return
-            entries: list[str] = []
+            entries: list[tuple[str, str]] = []
             try:
+                # Collect both directories and files
                 for entry in sorted(search_dir.iterdir()):
-                    if entry.is_dir():
-                        name = entry.name
-                        if not prefix or name.lower().startswith(prefix):
-                            entries.append(str(entry))
-                            if len(entries) >= 10:
-                                break
+                    name = entry.name
+                    if not prefix or name.lower().startswith(prefix):
+                        if entry.is_dir():
+                            entries.append((str(entry), f"📁 {name}/"))
+                        else:
+                            entries.append((str(entry), f"📄 {name}"))
+                        if len(entries) >= 20:
+                            break
             except PermissionError:
                 pass
             if entries:
-                for entry in entries:
-                    suggestions.add_option(Option(entry))
+                for entry_path, display_name in entries:
+                    suggestions.add_option(Option(display_name, id=entry_path))
                 suggestions.add_class("visible")
                 self._path_suggestions_visible = True
             else:
@@ -286,6 +339,7 @@ class ArtifactModal(FormModal):
 
         data = {
             "endpoint": endpoint,
+            "locally_mounted": bool(self.query_one("#artifact_locally_mounted", Checkbox).value),
             "path": path,
             "type": str(self.query_one("#artifact_type", Select).value or ""),
             "status": str(self.query_one("#artifact_status", Select).value or ""),

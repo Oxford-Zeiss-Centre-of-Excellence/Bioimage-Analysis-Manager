@@ -25,9 +25,9 @@ class DeleteConfirmModal(ModalScreen[str]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Static(f"Delete {self._label}?", classes="header")
+            yield Static(f"Remove {self._label}?", classes="header")
             with Horizontal(id="buttons"):
-                yield Button("Delete (Y)", id="confirm", variant="error")
+                yield Button("Remove (Y)", id="confirm", variant="error")
                 yield Button("Cancel (N)", id="cancel", variant="default")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

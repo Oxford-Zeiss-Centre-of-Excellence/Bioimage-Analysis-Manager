@@ -43,27 +43,32 @@ class MilestoneModal(FormModal):
                 with Horizontal(classes="form-row"):
                     yield Label("Name*:")
                     yield Input(
-                        str(self.initial_data.get("name", "")),
+                        str(self.initial_data.get("name") or ""),
                         id="milestone_name",
                         placeholder="Milestone name",
                     )
 
+                # Target date field
                 with Horizontal(classes="form-row"):
                     yield Label("Target date:")
                     yield DateSelect(
-                        "#milestone_datepicker_mount",
+                        "#milestone_target_datepicker_mount",
                         date=target_value,
                         id="milestone_target_date",
                     )
+                # Mount for target date picker (placed after field)
+                yield Static("", id="milestone_target_datepicker_mount")
 
+                # Actual date field
                 with Horizontal(classes="form-row"):
                     yield Label("Actual date:")
                     yield DateSelect(
-                        "#milestone_datepicker_mount",
+                        "#milestone_actual_datepicker_mount",
                         date=actual_value,
                         id="milestone_actual_date",
                     )
-                yield Static("", id="milestone_datepicker_mount")
+                # Mount for actual date picker (placed after field)
+                yield Static("", id="milestone_actual_datepicker_mount")
 
                 with Horizontal(classes="form-row"):
                     yield Label("Status:")
@@ -76,7 +81,7 @@ class MilestoneModal(FormModal):
                 with Horizontal(classes="form-row"):
                     yield Label("Notes:")
                     yield Input(
-                        str(self.initial_data.get("notes", "")),
+                        str(self.initial_data.get("notes") or ""),
                         id="milestone_notes",
                         placeholder="Optional",
                     )

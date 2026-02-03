@@ -1,0 +1,325 @@
+# BAM Configuration Defaults
+# This file contains default values for all configurable options in BAM.
+# 
+# To customize these values:
+# - System-wide: Copy to ~/.bam/config.yaml
+# - Project-level: Copy to <project>/.bam/config.yaml
+# 
+# Project-level config overrides system-wide config.
+
+# Cluster/Compute Options
+clusters:
+  - BMRC
+  - ARC
+  - CCB
+  - Other
+
+# Compute Locations for Task Execution
+compute_locations:
+  - Local
+  - HPC-GPU
+  - HPC-CPU
+  - Workstation
+
+# Data Storage Endpoints
+endpoints:
+  - Local
+  - I Drive
+  - MSD CEPH
+  - RFS
+
+# Data Format Options
+data_formats:
+  - tiff
+  - zarr
+  - hdf5
+  - nd2
+  - czi
+  - ome-tiff
+  - other
+
+# Collaborator Roles
+collaborator_roles:
+  - PI
+  - Students
+  - Others
+
+# Status Options
+project_status:
+  - label: Active
+    value: active
+  - label: Completed
+    value: completed
+  - label: Archived
+    value: archived
+  - label: On-hold
+    value: on-hold
+
+milestone_status:
+  - label: Pending
+    value: pending
+  - label: In Progress
+    value: in-progress
+  - label: Completed
+    value: completed
+  - label: Delayed
+    value: delayed
+  - label: Cancelled
+    value: cancelled
+
+publication_status:
+  - label: None
+    value: none
+  - label: In Preparation
+    value: in-prep
+  - label: Submitted
+    value: submitted
+  - label: Revision
+    value: revision
+  - label: Accepted
+    value: accepted
+  - label: Published
+    value: published
+
+archive_status:
+  - label: Active
+    value: active
+  - label: Pending Archive
+    value: pending-archive
+  - label: Archived
+    value: archived
+
+artifact_types:
+  - label: Figure
+    value: figure
+  - label: Table
+    value: table
+  - label: Dataset
+    value: dataset
+  - label: Model
+    value: model
+  - label: Report
+    value: report
+  - label: Script
+    value: script
+
+artifact_status:
+  - label: Draft
+    value: draft
+  - label: Ready
+    value: ready
+  - label: Delivered
+    value: delivered
+  - label: Published
+    value: published
+
+figure_element_sources:
+  - label: Script
+    value: script
+  - label: Software
+    value: software
+  - label: Manual
+    value: manual
+  - label: Raw
+    value: raw
+
+figure_element_status:
+  - label: Draft
+    value: draft
+  - label: Ready
+    value: ready
+  - label: Submitted
+    value: submitted
+  - label: Published
+    value: published
+
+# Image/Dataset Quality Options
+image_quality:
+  - ""
+  - Good
+  - Moderate
+  - Poor
+
+# Data Size Units
+data_size_units:
+  - label: GB
+    value: gb
+  - label: TB
+    value: tb
+
+# Imaging Modalities
+imaging_modalities:
+  - label: Confocal
+    value: confocal
+  - label: Widefield
+    value: widefield
+  - label: Light-sheet
+    value: light-sheet
+  - label: Two-photon
+    value: two-photon
+  - label: TIRF
+    value: tirf
+  - label: SIM
+    value: sim
+  - label: EM
+    value: em
+  - label: Brightfield
+    value: brightfield
+  - label: Phase contrast
+    value: phase-contrast
+  - label: DIC
+    value: dic
+  - label: Other
+    value: other
+
+# Programming Languages
+programming_languages:
+  - Python
+  - Shell scripting (Bash, Zsh, etc.)
+  - MATLAB
+  - Fiji macro
+  - LaTeX
+  - Java
+  - R
+  - C/C++
+  - Julia
+  - JavaScript
+  - TypeScript
+  - Go
+  - Rust
+
+# Software Tools
+software_tools:
+  - Fiji/ImageJ
+  - napari
+  - QuPath
+  - Imaris
+  - Arivis
+  - ZEN
+  - CellProfiler
+  - ilastik
+  - Icy
+  - OMERO
+  - Huygens
+  - Prism
+  - SPSS
+  - R Studio
+  - JupyterLab
+  - Google Colab
+  - AWS SageMaker
+  - Azure ML
+  - Kaggle Notebooks
+
+# Environment Types
+environment_types:
+  - label: Conda
+    value: conda
+  - label: Pixi
+    value: pixi
+  - label: Venv
+    value: venv
+  - label: UV
+    value: uv
+  - label: Poetry
+    value: poetry
+  - label: Docker
+    value: docker
+  - label: Devcontainer
+    value: devcontainer
+  - label: renv
+    value: renv
+  - label: Nix
+    value: nix
+  - label: C/C++
+    value: c-cpp
+  - label: JS/TS
+    value: js-ts
+  - label: Other
+    value: other
+  - label: None
+    value: ""
+
+# Cluster Management/Workflow Tools
+cluster_packages:
+  - SLURM
+  - UGE
+  - PBS
+  - LSF
+  - Snakemake
+  - Nextflow
+  - Cromwell
+  - WDL
+  - CWL
+  - Singularity/Apptainer
+
+# Task Categories with optional subcategories
+task_categories:
+  - label: Development
+    value: Development
+    subcategories:
+      - label: Pipeline
+        value: Pipeline
+      - label: Script
+        value: Script
+      - label: Model
+        value: Model
+      - label: Plugin
+        value: Plugin
+      - label: Environment
+        value: Environment
+      - label: Other
+        value: Other
+  - label: Execution
+    value: Execution
+    subcategories:
+      - label: Training
+        value: Training
+      - label: Inference
+        value: Inference
+      - label: Processing
+        value: Processing
+      - label: Other
+        value: Other
+  - label: Data Copying
+    value: Data Copying
+  - label: Documentation
+    value: Documentation
+  - label: Meeting
+    value: Meeting
+  - label: Admin
+    value: Admin
+  - label: Learning
+    value: Learning
+  - label: Support
+    value: Support
+  - label: Other
+    value: Other
+
+# Task Difficulty Levels
+task_difficulty:
+  - label: Easy
+    value: easy
+  - label: Medium
+    value: medium
+  - label: Hard
+    value: hard
+
+# Run Status (for Execution tasks)
+run_status:
+  - label: Queued
+    value: queued
+  - label: Running
+    value: running
+  - label: Completed
+    value: completed
+  - label: Failed
+    value: failed
+
+# Task Status
+task_status:
+  - label: Active
+    value: active
+  - label: Completed
+    value: completed
+  - label: Archived
+    value: archived

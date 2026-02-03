@@ -63,9 +63,18 @@ def compose_outputs_tab(app) -> ComposeResult:
                         )
 
                     yield Static("Figures", classes="section-header")
-                    yield Tree("Figures", id="figure_tree")
 
-                    with Horizontal(classes="form-row"):
+                    # Figure tree and info box side by side
+                    with Horizontal(id="figure_tree_container"):
+                        yield Tree("Figures", id="figure_tree")
+                        with VerticalScroll(id="figure_info_box"):
+                            yield Static(
+                                "Select a figure item to view details",
+                                id="figure_info_content",
+                                classes="hint-text",
+                            )
+
+                    with Horizontal(id="figure_actions"):
                         yield Button(
                             "Add Figure (A)", id="fig_add_root", variant="success"
                         )
@@ -76,7 +85,7 @@ def compose_outputs_tab(app) -> ComposeResult:
                             "Add Element (E)", id="fig_add_element", variant="primary"
                         )
                         yield Button("Edit (R)", id="fig_edit", variant="default")
-                        yield Button("Delete (D)", id="fig_delete", variant="error")
+                        yield Button("Remove (D)", id="fig_delete", variant="error")
 
                     yield Static("DOIs & Links", classes="section-header")
                     with Horizontal(classes="form-row"):

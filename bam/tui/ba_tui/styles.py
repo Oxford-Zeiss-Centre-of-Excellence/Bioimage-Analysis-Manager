@@ -133,6 +133,7 @@ CollaboratorModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -188,6 +189,7 @@ DatasetModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -257,6 +259,7 @@ ChannelModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -296,7 +299,8 @@ HardwareModal {
 
 #dialog {
     width: 70;
-    height: 34;
+    height: 80%;
+    max-height: 40;
     border: thick $primary;
     background: $surface;
     padding: 1 2;
@@ -305,6 +309,7 @@ HardwareModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -312,6 +317,10 @@ HardwareModal {
     height: auto;
     margin-bottom: 0;
     align: right middle;
+}
+
+#dialog .-hidden {
+    display: none;
 }
 
 #dialog Label {
@@ -398,7 +407,26 @@ MilestoneModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
+}
+
+#milestone_target_datepicker_mount {
+    height: 0;
+    overflow: hidden;
+}
+
+#milestone_target_datepicker_mount.expanded {
+    height: 18;
+}
+
+#milestone_actual_datepicker_mount {
+    height: 0;
+    overflow: hidden;
+}
+
+#milestone_actual_datepicker_mount.expanded {
+    height: 18;
 }
 
 #dialog .form-row {
@@ -451,6 +479,7 @@ AcquisitionSessionModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -552,6 +581,7 @@ FigureNodeModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -609,6 +639,7 @@ FigureElementModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -628,8 +659,35 @@ FigureElementModal {
     width: 1fr;
 }
 
+#dialog DateSelect {
+    width: 1fr;
+    height: 3;
+    min-height: 3;
+    padding: 0 1;
+}
+
 #dialog TextArea {
     height: 4;
+}
+
+#element_delivery_datepicker_mount {
+    height: 0;
+    overflow: hidden;
+}
+
+#element_delivery_datepicker_mount.expanded {
+    height: 18;
+}
+
+#output_path_suggestions {
+    height: 8;
+    display: none;
+    border: solid $primary;
+    margin: 0 0 0 16;
+}
+
+#output_path_suggestions.visible {
+    display: block;
 }
 
 #dialog_scroll {
@@ -697,6 +755,7 @@ ArtifactModal {
 #dialog .header {
     text-align: center;
     text-style: bold;
+    color: $primary;
     margin-bottom: 0;
 }
 
@@ -793,6 +852,19 @@ APP_CSS = """
     text-style: italic;
 }
 
+.hint-text {
+    width: 100%;
+    text-align: center;
+    color: $text-muted;
+    text-style: italic;
+    margin-top: 1;
+    margin-bottom: 1;
+    padding: 0 2;
+}
+
+Horizontal {
+    align: left middle;
+}
 
 Button {
     min-width: 6;
@@ -1125,7 +1197,8 @@ TextArea.invalid {
 #languages_actions,
 #software_actions,
 #cluster_packages_actions {
-    align: center middle;
+    align: center top;
+    height: auto;
 }
 
 #languages_list,
@@ -1162,5 +1235,433 @@ TextArea.invalid {
 
 #archive_location_suggestions.visible {
     display: block;
+}
+
+/* Figure tree container */
+#figure_tree_container {
+    height: 30;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#figure_tree {
+    width: 50%;
+    height: 100%;
+    border: solid $primary;
+}
+
+#figure_info_box {
+    width: 50%;
+    height: 100%;
+    border: solid $primary;
+    padding: 1;
+    margin-left: 1;
+}
+
+#figure_info_content {
+    width: 100%;
+    text-align: left;
+}
+
+#figure_actions {
+    width: 100%;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+#figure_actions Button {
+    margin: 0 1;
+}
+
+/* Placeholder tabs styling */
+#hub_placeholder,
+#idea_placeholder {
+    width: 100%;
+    height: 1fr;
+    align: center middle;
+}
+
+.placeholder-title {
+    text-align: center;
+    text-style: bold;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+.placeholder-description {
+    text-align: center;
+    color: $text-muted;
+    text-style: italic;
+}
+"""
+
+
+# =============================================================================
+# Worklog Modals
+# =============================================================================
+
+TASK_MODAL_CSS = """
+TaskModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 80;
+    height: auto;
+    max-height: 90%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+#dialog .header {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog_scroll {
+    width: 100%;
+    height: 1fr;
+    max-height: 60;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+}
+
+#dialog .form-row {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+#dialog .form-row Label {
+    width: 20;
+    content-align: right middle;
+    margin-right: 2;
+}
+
+#dialog .form-row Input {
+    width: 1fr;
+}
+
+#dialog .form-row Select {
+    width: 1fr;
+}
+
+#dialog .-hidden {
+    display: none;
+}
+
+#dialog .button-row {
+    width: 100%;
+    height: auto;
+    align: center middle;
+    padding: 1;
+}
+
+#dialog Button {
+    margin: 0 1;
+}
+"""
+
+
+# =============================================================================
+# Log Tab
+# =============================================================================
+
+LOG_TAB_CSS = """
+#log {
+    padding: 1 2;
+}
+
+#log_tree_container {
+    height: 1fr;
+    width: 100%;
+    margin-bottom: 1;
+    overflow: hidden;
+}
+
+#log_dashboard {
+    width: 50%;
+    min-width: 0;
+    max-width: 50%;
+    height: 100%;
+    border: solid $primary;
+    padding: 1;
+    scrollbar-gutter: stable;
+}
+
+#dashboard_sessions_container {
+    width: 100%;
+    height: 1fr;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.session-box {
+    width: 100%;
+    border: solid $primary;
+    padding: 1;
+    margin-bottom: 1;
+    background: $panel;
+    min-height: 8;
+    height: auto;
+}
+
+.session-header {
+    width: 100%;
+    text-style: bold;
+    color: $success;
+    margin-bottom: 1;
+}
+
+.session-details {
+    width: 100%;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+.session-buttons {
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+}
+
+.session-btn {
+    margin-right: 1;
+}
+
+.muted-text {
+    color: $text-muted;
+    text-style: italic;
+    padding: 1;
+}
+
+#dashboard_status {
+    width: 100%;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dashboard_status.active-session {
+    text-style: bold;
+    color: $success;
+}
+
+#dashboard_details {
+    width: 100%;
+    margin-bottom: 1;
+    color: $text-muted;
+}
+
+#dashboard_buttons {
+    width: 100%;
+    height: auto;
+    align: left middle;
+}
+
+#dashboard_buttons Button {
+    margin-right: 1;
+}
+
+#task_tree {
+    width: 50%;
+    min-width: 0;
+    max-width: 50%;
+    height: 100%;
+    border: solid $primary;
+    overflow-x: hidden;
+}
+
+
+#log_actions {
+    width: 100%;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+#log_actions Button {
+    margin: 0 1;
+    min-width: 18;
+}
+
+
+#log_history_toggle {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+.status-message {
+    width: 100%;
+    margin-top: 1;
+    text-align: center;
+    color: $warning;
+}
+
+.session-normal {
+    color: $success;
+}
+
+.session-long {
+    color: $warning;
+}
+
+.session-active {
+    color: $accent;
+}
+
+.session-problem {
+    color: $error;
+}
+"""
+
+
+EDIT_SESSION_MODAL_CSS = """
+EditSessionModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 70;
+    height: auto;
+    max-height: 90%;
+    border: thick $primary;
+    background: $surface;
+}
+
+#dialog .header {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#punch_in_datepicker_mount {
+    height: 0;
+    overflow: hidden;
+}
+
+#punch_in_datepicker_mount.expanded {
+    height: 18;
+}
+
+#punch_out_datepicker_mount {
+    height: 0;
+    overflow: hidden;
+}
+
+#punch_out_datepicker_mount.expanded {
+    height: 18;
+}
+
+#dialog_scroll {
+    width: 100%;
+    height: auto;
+    max-height: 60;
+    padding: 1 2;
+}
+
+#dialog .form-row {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+#dialog .form-row Label {
+    width: 15;
+    content-align: right middle;
+    margin-right: 2;
+}
+
+#dialog .form-row Input {
+    width: 1fr;
+}
+
+#dialog .section-label {
+    width: 100%;
+    margin-top: 1;
+    margin-bottom: 1;
+    text-style: bold;
+    color: $accent;
+}
+
+#dialog #task_name_display {
+    width: 1fr;
+    text-style: italic;
+}
+
+#dialog #session_note {
+    width: 100%;
+    height: 8;
+}
+
+#dialog .error-message {
+    width: 100%;
+    color: $error;
+    margin-top: 1;
+    text-align: center;
+}
+
+#dialog .button-row {
+    width: 100%;
+    height: auto;
+    align: center middle;
+    padding: 1;
+}
+
+#dialog Button {
+    margin: 0 1;
+}
+"""
+
+
+SESSION_NOTE_MODAL_CSS = """
+SessionNoteModal {
+    align: center middle;
+}
+
+#dialog {
+    width: 60;
+    height: auto;
+    border: thick $primary;
+    background: $surface;
+}
+
+#dialog .header {
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog_scroll {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+}
+
+#dialog .section-label {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#dialog #session_note {
+    width: 100%;
+    height: 10;
+}
+
+#dialog .button-row {
+    width: 100%;
+    height: auto;
+    align: center middle;
+    padding: 1;
+}
+
+#dialog Button {
+    margin: 0 1;
 }
 """

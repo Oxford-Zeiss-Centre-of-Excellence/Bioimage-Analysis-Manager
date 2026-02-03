@@ -134,6 +134,15 @@ billing:
   notes: ""
 
 # ============================================================================
+# WORKLOG - Time tracking and task logging (Log tab)
+# ============================================================================
+worklog:
+  file_path: "log/tasks.yaml" # Path to worklog data file (external storage)
+  version: 2                  # Schema version (for future migrations)
+  created: null               # Auto-set when worklog initialized
+  last_updated: null          # Auto-updated on save
+
+# ============================================================================
 # PUBLICATION - Publication and sharing information
 # ============================================================================
 publication:
