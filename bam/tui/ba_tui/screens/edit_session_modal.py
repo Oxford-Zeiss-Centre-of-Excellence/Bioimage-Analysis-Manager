@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, date
 
+import pendulum
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Static, TextArea
@@ -33,15 +34,25 @@ class EditSessionModal(FormModal):
 
     def compose(self) -> ComposeResult:
         # Format datetimes for input
-        punch_in_date_val = (
-            self.initial_punch_in.date() if self.initial_punch_in else date.today()
-        )
+        # Convert datetime.date to pendulum.DateTime for DateSelect widget
+        if self.initial_punch_in:
+            d = self.initial_punch_in.date()
+            punch_in_date_val = pendulum.datetime(d.year, d.month, d.day)
+        else:
+            today = date.today()
+            punch_in_date_val = pendulum.datetime(today.year, today.month, today.day)
+
         punch_in_time = (
             self.initial_punch_in.strftime("%H:%M") if self.initial_punch_in else ""
         )
-        punch_out_date_val = (
-            self.initial_punch_out.date() if self.initial_punch_out else None
-        )
+
+        if self.initial_punch_out:
+            d = self.initial_punch_out.date()
+            punch_out_date_val = pendulum.datetime(d.year, d.month, d.day)
+        else:
+            today = date.today()
+            punch_out_date_val = pendulum.datetime(today.year, today.month, today.day)
+
         punch_out_time = (
             self.initial_punch_out.strftime("%H:%M") if self.initial_punch_out else ""
         )
@@ -81,7 +92,7 @@ class EditSessionModal(FormModal):
                     yield Label("Date:")
                     yield DateSelect(
                         "#punch_out_datepicker_mount",
-                        date=punch_out_date_val if punch_out_date_val else date.today(),
+                        date=punch_out_date_val,
                         id="punch_out_date",
                     )
                 with Horizontal(classes="form-row"):

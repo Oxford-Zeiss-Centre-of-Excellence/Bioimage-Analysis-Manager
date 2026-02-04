@@ -969,4 +969,5 @@ class PersistenceMixin:
                 self._log_error.update("Logging is disabled in init-only mode.")
             return
         self._store_ui_state()
-        self.exit({"action": "log", "entries": self._worklog_entries})
+        # Worklog is auto-saved by worklog operations, no need to return entries
+        self.exit({"action": "log"})

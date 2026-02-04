@@ -1560,7 +1560,7 @@ EditSessionModal {
 
 #dialog_scroll {
     width: 100%;
-    height: auto;
+    height: 1fr;
     max-height: 60;
     padding: 1 2;
 }
@@ -1627,6 +1627,7 @@ SessionNoteModal {
 #dialog {
     width: 60;
     height: auto;
+    max-height: 90%;
     border: thick $primary;
     background: $surface;
 }
@@ -1640,7 +1641,8 @@ SessionNoteModal {
 
 #dialog_scroll {
     width: 100%;
-    height: auto;
+    height: 1fr;
+    max-height: 40;
     padding: 1 2;
 }
 

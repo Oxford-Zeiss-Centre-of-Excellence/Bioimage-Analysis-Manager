@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import time
 from importlib import metadata
 from pathlib import Path
 from typing import Callable, Optional, cast
@@ -2226,6 +2227,7 @@ class BAApp(
             elif hasattr(tree, "id") and tree.id == "task_tree":
                 # Handle task tree keyboard navigation
                 if hasattr(event.node, "data"):
+                    self._task_tree_last_interaction = time.monotonic()
                     self._on_tree_node_selected(event.node)
         except Exception:
             pass
@@ -2239,9 +2241,55 @@ class BAApp(
                 actual_node = event.node
                 # Make sure we have the actual TreeNode, not the event
                 if hasattr(actual_node, "data"):
+                    self._task_tree_last_interaction = time.monotonic()
                     self._on_tree_node_selected(actual_node)
         except Exception as e:
             # Silently ignore - not all trees are task trees
+            pass
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+        """Track expanded task nodes for worklog tree."""
+        try:
+            tree = event.control
+            if hasattr(tree, "id") and tree.id == "task_tree":
+                self._task_tree_last_interaction = time.monotonic()
+                node = event.node
+                if (
+                    node.data
+                    and isinstance(node.data, dict)
+                    and node.data.get("type") == "task"
+                ):
+                    task_id = node.data.get("id")
+                    if task_id:
+                        if not hasattr(self, "_task_expanded_ids"):
+                            self._task_expanded_ids = set()
+                        self._task_expanded_ids.add(str(task_id))
+        except Exception:
+            pass
+
+    def on_tree_node_collapsed(self, event: Tree.NodeCollapsed) -> None:
+        """Track collapsed task nodes for worklog tree."""
+        try:
+            tree = event.control
+            if hasattr(tree, "id") and tree.id == "task_tree":
+                self._task_tree_last_interaction = time.monotonic()
+                # Ignore collapse events during tree refresh to preserve expansion state
+                if (
+                    hasattr(self, "_refreshing_task_tree")
+                    and self._refreshing_task_tree
+                ):
+                    return
+
+                node = event.node
+                if (
+                    node.data
+                    and isinstance(node.data, dict)
+                    and node.data.get("type") == "task"
+                ):
+                    task_id = node.data.get("id")
+                    if task_id and hasattr(self, "_task_expanded_ids"):
+                        self._task_expanded_ids.discard(str(task_id))
+        except Exception:
             pass
 
     def action_worklog_new_task(self) -> None:

@@ -230,7 +230,7 @@ def run_log(args: argparse.Namespace) -> int:
     app = BAApp(
         mode="log",
         recent_entries=recent,
-        worklog_entries=worklog.entries,
+        worklog_entries=None,  # Legacy parameter, not used anymore
         task_types=task_types,
     )
     result = app.run()
@@ -238,10 +238,7 @@ def run_log(args: argparse.Namespace) -> int:
         emit({"status": "cancelled"})
         return 1
 
-    entries = result.get("entries", [])
-    if isinstance(entries, list):
-        worklog.entries = entries
-    save_worklog(project_root, worklog)
+    # Worklog is auto-saved by worklog operations, no need to save here
     emit(
         {
             "status": "ok",
@@ -601,11 +598,7 @@ def run_menu(args: argparse.Namespace) -> int:
 
     # Handle log action directly
     elif result.get("action") == "log":
-        worklog = load_worklog(project_root)
-        entries = result.get("entries", worklog.entries)
-        if isinstance(entries, list):
-            worklog.entries = entries
-        save_worklog(project_root, worklog)
+        # Worklog is auto-saved by worklog operations, no need to save here
         emit(
             {
                 "status": "ok",

@@ -25,6 +25,10 @@ class UIStateMixin:
     _ui_state_path: Path
     _figure_expanded_ids: set[str]
     _figure_selected_id: str | None
+    _last_working_task_id: str | None
+    _task_expanded_ids: set[str]
+    _task_selected_task_id: str | None
+    _task_selected_session_index: int | None
 
     def _get_project_state_key(self: "BAApp") -> str:
         """Return a unique key for this project's UI state."""
@@ -54,6 +58,22 @@ class UIStateMixin:
         if isinstance(figure_expanded, list):
             self._figure_expanded_ids = set(str(x) for x in figure_expanded)
         self._figure_selected_id = data.get("figure_selected_id")
+
+        # Restore last working task
+        self._last_working_task_id = data.get("last_working_task_id")
+
+        # Restore task tree state
+        task_expanded = data.get("task_expanded_ids", [])
+        if isinstance(task_expanded, list):
+            self._task_expanded_ids = set(str(x) for x in task_expanded)
+        self._task_selected_task_id = data.get("task_selected_task_id")
+        if "task_selected_session_index" in data:
+            try:
+                self._task_selected_session_index = int(
+                    data.get("task_selected_session_index")
+                )
+            except Exception:
+                self._task_selected_session_index = None
 
         if tab_id:
             try:
@@ -132,6 +152,31 @@ class UIStateMixin:
         except Exception:
             pass
 
+        # Collect task tree state
+        task_expanded_ids: list[str] = []
+        task_selected_task_id: str | None = None
+        task_selected_session_index: int | None = None
+        try:
+            task_tree = self.query_one("#task_tree", Tree)
+            def collect_task_expanded(node) -> None:
+                if node.is_expanded and node.data:
+                    node_id = node.data.get("id")
+                    if node_id:
+                        task_expanded_ids.append(str(node_id))
+                for child in node.children:
+                    collect_task_expanded(child)
+            collect_task_expanded(task_tree.root)
+            if task_tree.cursor_node and task_tree.cursor_node.data:
+                node_data = task_tree.cursor_node.data
+                if isinstance(node_data, dict):
+                    if node_data.get("type") == "task":
+                        task_selected_task_id = node_data.get("id")
+                    elif node_data.get("type") == "session":
+                        task_selected_task_id = node_data.get("task_id")
+                        task_selected_session_index = node_data.get("session_index")
+        except Exception:
+            pass
+
         project_key = self._get_project_state_key()
         project_state: dict[str, object] = {
             "active_tab": active_tab,
@@ -143,6 +188,17 @@ class UIStateMixin:
             project_state["figure_expanded_ids"] = figure_expanded_ids
         if figure_selected_id:
             project_state["figure_selected_id"] = figure_selected_id
+
+        # Save last working task
+        if hasattr(self, "_last_working_task_id") and self._last_working_task_id:
+            project_state["last_working_task_id"] = self._last_working_task_id
+
+        if task_expanded_ids:
+            project_state["task_expanded_ids"] = task_expanded_ids
+        if task_selected_task_id:
+            project_state["task_selected_task_id"] = task_selected_task_id
+        if task_selected_session_index is not None:
+            project_state["task_selected_session_index"] = task_selected_session_index
 
         try:
             self._ui_state_path.parent.mkdir(parents=True, exist_ok=True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import time
 from pathlib import Path
 
 from textual.widgets import Button, Static, Tree
@@ -24,7 +25,10 @@ from ..worklog import (
     add_session_note,
     complete_task,
     create_task,
+    delete_session,
+    delete_task,
     edit_session,
+    edit_task,
     incomplete_task,
     load_worklog,
     punch_in,
@@ -55,14 +59,33 @@ class WorklogMixin:
     _selected_session_index: int | None
     _show_history: bool
     _last_working_task_id: str | None
+    _refreshing_task_tree: bool
 
     def _init_worklog(self) -> None:
         """Initialize worklog state."""
         self._worklog = WorkLog()
-        self._selected_task_id = None
-        self._selected_session_index = None
+        # Restore selection from persisted UI state if available
+        if hasattr(self, "_task_selected_task_id") and self._task_selected_task_id:
+            self._selected_task_id = self._task_selected_task_id
+        else:
+            self._selected_task_id = None
+
+        if (
+            hasattr(self, "_task_selected_session_index")
+            and self._task_selected_session_index is not None
+        ):
+            self._selected_session_index = self._task_selected_session_index
+        else:
+            self._selected_session_index = None
         self._show_history = False
-        self._last_working_task_id = None
+        # Only initialize _last_working_task_id if not already set by UI state
+        if not hasattr(self, "_last_working_task_id"):
+            self._last_working_task_id = None
+        if not hasattr(self, "_task_expanded_ids"):
+            self._task_expanded_ids = set()
+        self._refreshing_task_tree = False
+        if not hasattr(self, "_task_tree_last_interaction"):
+            self._task_tree_last_interaction = 0.0
 
     def _load_worklog_data(self) -> None:
         """Load worklog from disk."""
@@ -86,8 +109,13 @@ class WorklogMixin:
             message = f"{count} session{'s' if count > 1 else ''} need attention. Check highlighted entries in the log."
             self.notify(message, severity="warning", timeout=5)
 
-    def _select_task_in_tree(self, task_id: str) -> None:
-        """Select a task in the tree by its ID."""
+    def _select_task_in_tree(self, task_id: str, expand: bool = False) -> None:
+        """Select a task in the tree by its ID.
+
+        Args:
+            task_id: ID of the task to select
+            expand: Whether to expand the task node after selecting
+        """
         try:
             tree = self.query_one("#task_tree", Tree)
         except Exception:
@@ -100,9 +128,83 @@ class WorklogMixin:
                 and node.data.get("type") == "task"
                 and node.data.get("id") == task_id
             ):
+                if expand:
+                    node.expand()
+                    if hasattr(self, "_task_expanded_ids"):
+                        self._task_expanded_ids.add(str(task_id))
                 tree.select_node(node)
                 tree.move_cursor(node)
                 break
+
+    def _select_session_in_tree(self, task_id: str, session_index: int) -> None:
+        """Select a session node in the tree by task ID and session index."""
+        try:
+            tree = self.query_one("#task_tree", Tree)
+        except Exception:
+            return
+
+        for node in tree.root.children:
+            if (
+                node.data
+                and node.data.get("type") == "task"
+                and node.data.get("id") == task_id
+            ):
+                if not node.is_expanded:
+                    node.expand()
+                if 0 <= session_index < len(node.children):
+                    session_node = node.children[session_index]
+                    tree.select_node(session_node)
+                    tree.move_cursor(session_node)
+                else:
+                    tree.select_node(node)
+                    tree.move_cursor(node)
+                break
+
+    def _restore_tree_selection(self) -> None:
+        """Restore tree selection after refresh based on current selection state."""
+        try:
+            tree = self.query_one("#task_tree", Tree)
+        except Exception:
+            return
+
+        if not self._selected_task_id:
+            return
+
+        task_node = None
+        for node in tree.root.children:
+            if (
+                node.data
+                and node.data.get("type") == "task"
+                and node.data.get("id") == self._selected_task_id
+            ):
+                task_node = node
+                break
+
+        if not task_node:
+            self._selected_task_id = None
+            self._selected_session_index = None
+            return
+
+        if (
+            hasattr(self, "_task_expanded_ids")
+            and self._task_expanded_ids
+            and str(self._selected_task_id) in self._task_expanded_ids
+            and not task_node.is_expanded
+        ):
+            task_node.expand()
+
+        if self._selected_session_index is not None:
+            if not task_node.is_expanded:
+                task_node.expand()
+            if 0 <= self._selected_session_index < len(task_node.children):
+                session_node = task_node.children[self._selected_session_index]
+                tree.select_node(session_node)
+                tree.move_cursor(session_node)
+                return
+            self._selected_session_index = None
+
+        tree.select_node(task_node)
+        tree.move_cursor(task_node)
 
     def _refresh_task_tree(self) -> None:
         """Refresh the task tree display."""
@@ -111,25 +213,69 @@ class WorklogMixin:
         except Exception:
             return
 
-        tree.clear()
-        tree.root.expand()
+        # Set flag to prevent collapse events from modifying _task_expanded_ids during refresh
+        self._refreshing_task_tree = True
 
-        # Show all tasks
-        tasks_to_show = self._worklog.tasks
+        try:
+            # Remember which task nodes are expanded before clearing
+            expanded_task_ids = set()
+            for node in tree.root.children:
+                if node.is_expanded and node.data and node.data.get("type") == "task":
+                    task_id = node.data.get("id")
+                    if task_id:
+                        expanded_task_ids.add(str(task_id))
 
-        # Add tasks to tree
-        for task in tasks_to_show:
-            task_label = self._format_task_label(task)
-            task_node = tree.root.add(task_label, data={"type": "task", "id": task.id})
+            # Merge in persisted expansion state if available
+            if hasattr(self, "_task_expanded_ids") and self._task_expanded_ids:
+                expanded_task_ids.update(self._task_expanded_ids)
+            if not hasattr(self, "_task_expanded_ids"):
+                self._task_expanded_ids = set()
+            self._task_expanded_ids.update(expanded_task_ids)
 
-            # Add sessions as children
-            for idx, session in enumerate(task.sessions):
-                session_label = self._format_session_label(session, idx)
-                session_node = task_node.add(
-                    session_label,
-                    data={"type": "session", "task_id": task.id, "session_index": idx},
+            tree.clear()
+            tree.root.expand()
+
+            # Show all tasks
+            tasks_to_show = self._worklog.tasks
+
+            # Add tasks to tree
+            for task in tasks_to_show:
+                task_label = self._format_task_label(task)
+                task_node = tree.root.add(
+                    task_label, data={"type": "task", "id": task.id}
                 )
-                # Note: TreeNode doesn't support CSS classes, colors are in the label text via format_session_label
+
+                # Restore/force expansion state for this task
+                task_id_str = str(task.id)
+                should_expand = (
+                    task_id_str in expanded_task_ids
+                    or task_id_str == str(self._selected_task_id)
+                    or task.active_session()
+                )
+
+                # Add sessions as children
+                for idx, session in enumerate(task.sessions):
+                    session_label = self._format_session_label(session, idx)
+                    session_node = task_node.add(
+                        session_label,
+                        data={
+                            "type": "session",
+                            "task_id": task.id,
+                            "session_index": idx,
+                        },
+                    )
+                    # Note: TreeNode doesn't support CSS classes, colors are in the label text via format_session_label
+
+                if should_expand:
+                    task_node.expand()
+                    # Explicitly track expansion state since expand events may not fire immediately
+                    if hasattr(self, "_task_expanded_ids"):
+                        self._task_expanded_ids.add(task_id_str)
+
+            self._restore_tree_selection()
+        finally:
+            # Clear refresh flag to allow normal collapse/expand event handling
+            self._refreshing_task_tree = False
 
     def _format_task_label(self, task: Task) -> str:
         """Format task as tree label."""
@@ -140,6 +286,7 @@ class WorklogMixin:
         if task.is_active():
             # Blink between green and black for active sessions
             import time
+
             blink_on = int(time.time()) % 2 == 0
             status_icon = "🟢" if blink_on else "⚫"
         elif task.status == LogTaskStatus.completed:
@@ -322,8 +469,7 @@ class WorklogMixin:
             return
 
         if not node.data:
-            self._selected_task_id = None
-            self._selected_session_index = None
+            # Ignore non-task/session nodes (e.g., root) to avoid clearing selection on refresh.
             return
 
         node_data = node.data
@@ -441,15 +587,24 @@ class WorklogMixin:
             self.notify(
                 "⚠️ Task was completed. Marking as incomplete to check in.",
                 severity="warning",
-                timeout=5
+                timeout=5,
             )
             # Mark task as incomplete
             incomplete_task(self._project_root, self._selected_task_id)
             # Reload to update the status
             self._load_worklog_data()
 
-        punch_in(self._project_root, self._selected_task_id)
+        task_id = self._selected_task_id
+
+        # Ensure the task is in expanded state before and after check-in
+        if hasattr(self, "_task_expanded_ids"):
+            self._task_expanded_ids.add(str(task_id))
+
+        punch_in(self._project_root, task_id)
         self._load_worklog_data()
+
+        # Force re-expansion and selection after refresh
+        self.set_timer(0.05, lambda: self._select_task_in_tree(task_id, expand=True))
 
     async def _handle_check_out(self) -> None:
         """Handle checking out of active task."""
@@ -480,8 +635,17 @@ class WorklogMixin:
         # Track as last working task
         self._last_working_task_id = task.id
 
-        punch_out(self._project_root, task.id)
+        task_id = task.id
+
+        # Ensure the task is in expanded state before and after check-out
+        if hasattr(self, "_task_expanded_ids"):
+            self._task_expanded_ids.add(str(task_id))
+
+        punch_out(self._project_root, task_id)
         self._load_worklog_data()
+
+        # Force re-expansion and selection after refresh
+        self.set_timer(0.05, lambda: self._select_task_in_tree(task_id, expand=True))
 
     async def _handle_session_check_out(self, task_id: str) -> None:
         """Handle checking out of specific task session."""
@@ -557,8 +721,6 @@ class WorklogMixin:
                     session_idx = idx
                     break
 
-            from ..worklog import add_session_note
-
             add_session_note(self._project_root, task.id, session_idx, result["note"])
             self._load_worklog_data()
 
@@ -583,18 +745,42 @@ class WorklogMixin:
                 )
             )
 
-            if result and not result.get("__delete__"):
-                edit_session(
-                    self._project_root,
-                    task.id,
-                    self._selected_session_index,
-                    result["punch_in"],
-                    result["punch_out"],
-                    result["note"],
-                )
-                self._load_worklog_data()
-                # Keep the session selected after edit
-                self._select_task_in_tree(task.id)
+            if result:
+                if result.get("__delete__"):
+                    # Delete the session
+                    task_id_to_select = task.id
+                    delete_session(
+                        self._project_root,
+                        task.id,
+                        self._selected_session_index,
+                    )
+                    # Update selection state: keep task selected, clear session index
+                    self._selected_task_id = task_id_to_select
+                    self._selected_session_index = None
+
+                    self._load_worklog_data()
+                    # Keep the parent task selected (expansion state preserved automatically by _refresh_task_tree)
+                    self.set_timer(
+                        0.05, lambda: self._select_task_in_tree(task_id_to_select)
+                    )
+                else:
+                    # Edit the session
+                    edit_session(
+                        self._project_root,
+                        task.id,
+                        self._selected_session_index,
+                        result["punch_in"],
+                        result["punch_out"],
+                        result["note"],
+                    )
+                    self._load_worklog_data()
+                    # Keep the session selected after edit
+                    if self._selected_session_index is not None:
+                        self._select_session_in_tree(
+                            task.id, self._selected_session_index
+                        )
+                    else:
+                        self._select_task_in_tree(task.id)
         else:
             # Edit task
             initial_data = {
@@ -617,12 +803,8 @@ class WorklogMixin:
 
             if result:
                 if result.get("__delete__"):
-                    from ..worklog import delete_task
-
                     delete_task(self._project_root, task.id)
                 else:
-                    from ..worklog import edit_task
-
                     edit_task(
                         self._project_root,
                         task.id,
@@ -669,24 +851,32 @@ class WorklogMixin:
         if not self._selected_task_id:
             return
 
+        session_index_to_select: int | None = None
         if self._selected_session_index is not None:
             # Delete session
-            from ..worklog import delete_session
-
             task = self._get_task(self._selected_task_id)
             if task:
+                task_id_to_select = task.id
+                session_index_to_select = self._selected_session_index - 1
                 delete_session(
                     self._project_root,
                     self._selected_task_id,
                     self._selected_session_index,
                 )
+                self._selected_task_id = task_id_to_select
+                # Prefer previous session if it exists after delete
+                if session_index_to_select >= 0:
+                    self._selected_session_index = session_index_to_select
+                else:
+                    self._selected_session_index = None
         else:
             # Delete task
-            from ..worklog import delete_task
-
             delete_task(self._project_root, self._selected_task_id)
 
         self._load_worklog_data()
+        if self._selected_task_id:
+            # Selection restoration is handled during refresh; no extra timer needed.
+            pass
 
     def _tick_worklog(self) -> None:
         """Periodic update for dashboard and tree (called every second)."""
@@ -695,9 +885,9 @@ class WorklogMixin:
 
         # Refresh tree to update blinking indicators for active tasks
         if self._worklog.active_tasks():
-            # Save current selection
-            current_selection = self._selected_task_id
+            # Avoid refreshing while user is interacting with the task tree
+            if hasattr(self, "_task_tree_last_interaction"):
+                if time.monotonic() - self._task_tree_last_interaction < 0.6:
+                    return
+            # Refresh tree (expansion state is preserved automatically)
             self._refresh_task_tree()
-            # Restore selection
-            if current_selection:
-                self._select_task_in_tree(current_selection)
