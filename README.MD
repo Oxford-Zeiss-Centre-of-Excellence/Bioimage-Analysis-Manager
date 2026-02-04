@@ -247,7 +247,7 @@ my-project/
 ├── artifact/
 │   └── results.md
 ├── log/
-│   └── worklog.md
+│   └── tasks.yaml      # Task-based worklog
 ├── ideas/
 └── README.md
 ```

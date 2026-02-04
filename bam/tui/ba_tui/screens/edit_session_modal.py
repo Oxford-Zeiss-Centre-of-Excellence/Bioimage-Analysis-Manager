@@ -87,25 +87,6 @@ class EditSessionModal(FormModal):
                 with Horizontal(classes="form-row"):
                     yield Label("Time:")
                     yield Input(
-                        punch_in_time,
-                        id="punch_in_time",
-                        placeholder="HH:MM",
-                    )
-
-                # Check Out
-                yield Label("Check Out:", classes="section-label")
-                with Horizontal(classes="form-row"):
-                    yield Label("Date:")
-                    yield DateSelect(
-                        value=punch_out_date_val
-                        if punch_out_date_val
-                        else date.today(),
-                        id="punch_out_date",
-                        picker_mount="#punch_out_datepicker_mount",
-                    )
-                with Horizontal(classes="form-row"):
-                    yield Label("Time:")
-                    yield Input(
                         punch_out_time,
                         id="punch_out_time",
                         placeholder="HH:MM",

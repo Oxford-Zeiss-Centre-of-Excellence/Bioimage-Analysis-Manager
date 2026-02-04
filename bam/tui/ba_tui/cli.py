@@ -137,7 +137,7 @@ def run_log(args: argparse.Namespace) -> int:
                 "status": "ok",
                 "project_root": str(project_root),
                 "entry": entry,
-                "worklog_path": str(project_root / "log" / "worklog.yaml"),
+                "worklog_path": str(project_root / "log" / "tasks.yaml"),
             }
         )
         return 0
@@ -149,7 +149,7 @@ def run_log(args: argparse.Namespace) -> int:
                 "status": "ok",
                 "project_root": str(project_root),
                 "entry": entry,
-                "worklog_path": str(project_root / "log" / "worklog.yaml"),
+                "worklog_path": str(project_root / "log" / "tasks.yaml"),
             }
         )
         return 0
@@ -174,7 +174,7 @@ def run_log(args: argparse.Namespace) -> int:
                 "status": "ok",
                 "project_root": str(project_root),
                 "entry": entry,
-                "worklog_path": str(project_root / "log" / "worklog.yaml"),
+                "worklog_path": str(project_root / "log" / "tasks.yaml"),
             }
         )
         return 0
@@ -194,7 +194,7 @@ def run_log(args: argparse.Namespace) -> int:
                 "status": "ok",
                 "project_root": str(project_root),
                 "entry": entry,
-                "worklog_path": str(project_root / "log" / "worklog.yaml"),
+                "worklog_path": str(project_root / "log" / "tasks.yaml"),
             }
         )
         return 0
@@ -219,7 +219,7 @@ def run_log(args: argparse.Namespace) -> int:
                 "status": "ok",
                 "project_root": str(project_root),
                 "entry": entry,
-                "worklog_path": str(project_root / "log" / "worklog.yaml"),
+                "worklog_path": str(project_root / "log" / "tasks.yaml"),
             }
         )
         return 0
@@ -246,7 +246,7 @@ def run_log(args: argparse.Namespace) -> int:
         {
             "status": "ok",
             "project_root": str(project_root),
-            "worklog_path": str(project_root / "log" / "worklog.yaml"),
+            "worklog_path": str(project_root / "log" / "tasks.yaml"),
         }
     )
     return 0
@@ -610,7 +610,7 @@ def run_menu(args: argparse.Namespace) -> int:
             {
                 "status": "ok",
                 "project_root": str(project_root),
-                "worklog_path": str(project_root / "log" / "worklog.yaml"),
+                "worklog_path": str(project_root / "log" / "tasks.yaml"),
             }
         )
         return 0
@@ -780,7 +780,7 @@ Examples:
     log_parser = subparsers.add_parser(
         "log",
         help="Append a worklog entry",
-        description="Add structured entry to log/worklog.yaml with time tracking.",
+        description="Add structured entry to log/tasks.yaml with time tracking.",
         epilog="""
 Examples:
   bam log                                    Open TUI to write entry

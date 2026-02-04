@@ -18,20 +18,10 @@ def ensure_directories(project_root: Path) -> None:
 
 
 def ensure_worklog(project_root: Path) -> Path:
+    """Ensure log directory exists and return tasks.yaml path."""
     log_dir = project_root / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
-    yaml_path = log_dir / "worklog.yaml"
-    if not yaml_path.exists():
-        yaml_path.write_text("entries: []\n")
-
-    md_path = log_dir / "worklog.md"
-    if not md_path.exists():
-        template_path = templates_root() / "worklog.md"
-        if template_path.exists():
-            md_path.write_text(template_path.read_text())
-        else:
-            md_path.write_text("# Worklog\n\n")
-    return md_path
+    return log_dir / "tasks.yaml"
 
 
 def ensure_log_types_template(project_root: Path) -> Path:
