@@ -102,11 +102,13 @@ BAM automatically validates your `manifest.yaml` at four critical points:
 
 ### Backup Files
 
-When validation errors occur during save operations, BAM automatically creates a backup:
+When validation **fails** during save operations, BAM automatically creates a timestamped backup of your last known good manifest:
 
 ```
 manifest.yaml.2026-02-03T14-30-15.bak.yaml
 ```
+
+**Important:** Backups are only created when validation fails, not on every successful save. This preserves your working manifest when you attempt to save invalid data.
 
 To restore from a backup:
 
@@ -139,7 +141,7 @@ chmod u+w .
 
 ### Disk Space Issues
 
-BAM creates backup files when saving. If you're running low on disk space:
+BAM creates backup files only when validation fails. Over time, you may accumulate old backups. To clean them up:
 
 ```bash
 # Clean old backups (keep recent ones)

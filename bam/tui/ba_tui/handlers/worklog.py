@@ -300,7 +300,7 @@ class WorklogMixin:
 
             # Now mount buttons to the attached container
             check_out_btn = Button(
-                "Check Out (O)",
+                "Check Out (I)",
                 id=f"session_check_out_{task.id}",
                 variant="primary",
                 classes="session-btn",
