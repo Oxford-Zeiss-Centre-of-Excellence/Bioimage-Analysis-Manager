@@ -6,6 +6,7 @@ from datetime import timedelta
 import time
 from pathlib import Path
 
+import yaml
 from textual.widgets import Button, Static, Tree
 from textual.widgets.tree import TreeNode
 
@@ -63,6 +64,37 @@ class WorklogMixin:
 
     def _init_worklog(self) -> None:
         """Initialize worklog state."""
+        # Load task tree UI state if it wasn't already applied (e.g., log mode).
+        try:
+            needs_task_state = not hasattr(self, "_task_expanded_ids") or not self._task_expanded_ids
+            needs_selection = not hasattr(self, "_task_selected_task_id") or not self._task_selected_task_id
+            needs_session = not hasattr(self, "_task_selected_session_index")
+            if (
+                (needs_task_state or needs_selection or needs_session)
+                and hasattr(self, "_ui_state_path")
+                and hasattr(self, "_get_project_state_key")
+            ):
+                if self._ui_state_path.exists():
+                    with open(self._ui_state_path) as f:
+                        all_state = yaml.safe_load(f) or {}
+                    project_key = self._get_project_state_key()
+                    data = all_state.get(project_key, {})
+                    if needs_task_state:
+                        expanded = data.get("task_expanded_ids", [])
+                        if isinstance(expanded, list):
+                            self._task_expanded_ids = set(str(x) for x in expanded)
+                    if needs_selection:
+                        self._task_selected_task_id = data.get("task_selected_task_id")
+                    if needs_session and "task_selected_session_index" in data:
+                        try:
+                            self._task_selected_session_index = int(
+                                data.get("task_selected_session_index")
+                            )
+                        except Exception:
+                            self._task_selected_session_index = None
+        except Exception:
+            pass
+
         self._worklog = WorkLog()
         # Restore selection from persisted UI state if available
         if hasattr(self, "_task_selected_task_id") and self._task_selected_task_id:
@@ -109,12 +141,13 @@ class WorklogMixin:
             message = f"{count} session{'s' if count > 1 else ''} need attention. Check highlighted entries in the log."
             self.notify(message, severity="warning", timeout=5)
 
-    def _select_task_in_tree(self, task_id: str, expand: bool = False) -> None:
+    def _select_task_in_tree(self, task_id: str, expand: bool = False, collapse: bool = False) -> None:
         """Select a task in the tree by its ID.
 
         Args:
             task_id: ID of the task to select
             expand: Whether to expand the task node after selecting
+            collapse: Whether to collapse the task node after selecting
         """
         try:
             tree = self.query_one("#task_tree", Tree)
@@ -132,6 +165,10 @@ class WorklogMixin:
                     node.expand()
                     if hasattr(self, "_task_expanded_ids"):
                         self._task_expanded_ids.add(str(task_id))
+                elif collapse:
+                    node.collapse()
+                    if hasattr(self, "_task_expanded_ids"):
+                        self._task_expanded_ids.discard(str(task_id))
                 tree.select_node(node)
                 tree.move_cursor(node)
                 break
@@ -185,12 +222,19 @@ class WorklogMixin:
             self._selected_session_index = None
             return
 
-        if (
+        # Only expand when needed; never collapse on selection restore.
+        # If a session is selected, keep the task expanded regardless of saved state.
+        should_expand = False
+        if self._selected_session_index is not None:
+            should_expand = True
+        elif (
             hasattr(self, "_task_expanded_ids")
             and self._task_expanded_ids
             and str(self._selected_task_id) in self._task_expanded_ids
-            and not task_node.is_expanded
         ):
+            should_expand = True
+
+        if should_expand and not task_node.is_expanded:
             task_node.expand()
 
         if self._selected_session_index is not None:
@@ -245,13 +289,10 @@ class WorklogMixin:
                     task_label, data={"type": "task", "id": task.id}
                 )
 
-                # Restore/force expansion state for this task
+                # Restore expansion state for this task.
+                # Only expand if explicitly in expanded set; do not auto-expand on selection.
                 task_id_str = str(task.id)
-                should_expand = (
-                    task_id_str in expanded_task_ids
-                    or task_id_str == str(self._selected_task_id)
-                    or task.active_session()
-                )
+                should_expand = task_id_str in expanded_task_ids
 
                 # Add sessions as children
                 for idx, session in enumerate(task.sessions):
@@ -596,15 +637,11 @@ class WorklogMixin:
 
         task_id = self._selected_task_id
 
-        # Ensure the task is in expanded state before and after check-in
-        if hasattr(self, "_task_expanded_ids"):
-            self._task_expanded_ids.add(str(task_id))
-
         punch_in(self._project_root, task_id)
         self._load_worklog_data()
 
-        # Force re-expansion and selection after refresh
-        self.set_timer(0.05, lambda: self._select_task_in_tree(task_id, expand=True))
+        # Restore selection without changing expansion state
+        self.set_timer(0.05, lambda: self._select_task_in_tree(task_id))
 
     async def _handle_check_out(self) -> None:
         """Handle checking out of active task."""
@@ -637,15 +674,11 @@ class WorklogMixin:
 
         task_id = task.id
 
-        # Ensure the task is in expanded state before and after check-out
-        if hasattr(self, "_task_expanded_ids"):
-            self._task_expanded_ids.add(str(task_id))
-
         punch_out(self._project_root, task_id)
         self._load_worklog_data()
 
-        # Force re-expansion and selection after refresh
-        self.set_timer(0.05, lambda: self._select_task_in_tree(task_id, expand=True))
+        # Restore selection without changing expansion state
+        self.set_timer(0.05, lambda: self._select_task_in_tree(task_id))
 
     async def _handle_session_check_out(self, task_id: str) -> None:
         """Handle checking out of specific task session."""
@@ -878,16 +911,28 @@ class WorklogMixin:
             # Selection restoration is handled during refresh; no extra timer needed.
             pass
 
+    def _update_active_task_labels(self) -> None:
+        """Update labels for active tasks to show blinking indicator without full tree rebuild."""
+        try:
+            tree = self.query_one("#task_tree", Tree)
+        except Exception:
+            return
+
+        # Update labels for task nodes with active sessions
+        for node in tree.root.children:
+            if node.data and node.data.get("type") == "task":
+                task_id = node.data.get("id")
+                if task_id:
+                    task = self._get_task(task_id)
+                    if task and task.active_session():
+                        # Update the label with new blinking state
+                        node.label = self._format_task_label(task)
+
     def _tick_worklog(self) -> None:
         """Periodic update for dashboard and tree (called every second)."""
         # Update dashboard to refresh elapsed time for active session
         self._update_dashboard()
 
-        # Refresh tree to update blinking indicators for active tasks
+        # Update blinking indicators for active tasks (lightweight, no tree rebuild)
         if self._worklog.active_tasks():
-            # Avoid refreshing while user is interacting with the task tree
-            if hasattr(self, "_task_tree_last_interaction"):
-                if time.monotonic() - self._task_tree_last_interaction < 0.6:
-                    return
-            # Refresh tree (expansion state is preserved automatically)
-            self._refresh_task_tree()
+            self._update_active_task_labels()

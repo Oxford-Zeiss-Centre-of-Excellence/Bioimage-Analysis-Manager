@@ -176,6 +176,11 @@ class UIStateMixin:
                         task_selected_session_index = node_data.get("session_index")
         except Exception:
             pass
+        # Merge cached expansion state to avoid teardown-time collapse from overwriting it.
+        if hasattr(self, "_task_expanded_ids") and self._task_expanded_ids:
+            merged = set(task_expanded_ids)
+            merged.update(str(x) for x in self._task_expanded_ids)
+            task_expanded_ids = sorted(merged)
 
         project_key = self._get_project_state_key()
         project_state: dict[str, object] = {
