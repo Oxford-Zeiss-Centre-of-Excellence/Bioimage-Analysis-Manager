@@ -642,7 +642,7 @@ class Hub(BaseModel):
 class WorklogManifest(BaseModel):
     """Worklog file reference in manifest."""
 
-    file_path: str = "log/tasks.yaml"
+    file_path: str = ".bam/log/tasks.yaml"
     version: int = 2
     created: Optional[date] = None
     last_updated: Optional[date] = None

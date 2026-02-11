@@ -21,6 +21,7 @@ from .models import (
     WorkLog,
     WorklogManifest,
 )
+from .paths import resolve_output_file
 
 # Sentinel value to distinguish "not provided" from "set to None"
 _UNSET = object()
@@ -32,21 +33,38 @@ _UNSET = object()
 
 
 def get_worklog_path(project_root: Path) -> Path:
-    """Get worklog file path from manifest, or use default."""
+    """Get worklog file path from manifest, or use default with fallback.
+
+    Checks manifest.worklog.file_path first, then uses auto-detect:
+    - .bam/log/tasks.yaml (new structure)
+    - log/tasks.yaml (old structure, backward compat)
+    """
     try:
         manifest_path = project_root / "manifest.yaml"
         manifest = load_manifest(manifest_path)
         if manifest and manifest.worklog and manifest.worklog.file_path:
-            return project_root / manifest.worklog.file_path
+            # Use path from manifest (may be relative)
+            worklog_path = project_root / manifest.worklog.file_path
+            if worklog_path.exists():
+                return worklog_path
     except Exception:
         pass
 
-    # Default path
-    return project_root / "log" / "tasks.yaml"
+    # Default path with auto-detect fallback
+    return resolve_output_file(project_root, "log", "tasks.yaml")
 
 
 def _worklog_csv_path(project_root: Path) -> Path:
-    """Legacy CSV worklog path (for migration)."""
+    """Legacy CSV worklog path (for migration).
+
+    Checks both new and old structure for legacy CSV files.
+    """
+    # Check new structure first
+    new_path = resolve_output_file(project_root, "log", "worklog.csv")
+    if new_path.exists():
+        return new_path
+
+    # Fallback to old structure
     return project_root / "log" / "worklog.csv"
 
 
@@ -56,13 +74,16 @@ def _worklog_csv_path(project_root: Path) -> Path:
 
 
 def init_worklog_manifest_section(project_root: Path) -> None:
-    """Initialize worklog section in manifest if missing."""
+    """Initialize worklog section in manifest if missing.
+
+    Uses new .bam/ structure for new projects.
+    """
     try:
         manifest_path = project_root / "manifest.yaml"
         manifest = load_manifest(manifest_path)
         if manifest and manifest.worklog is None:
             manifest.worklog = WorklogManifest(
-                file_path="log/tasks.yaml",
+                file_path=".bam/log/tasks.yaml",
                 version=2,
                 created=date.today(),
                 last_updated=date.today(),
@@ -136,7 +157,15 @@ def load_worklog(project_root: Path) -> WorkLog:
 
 
 def save_worklog(project_root: Path, worklog: WorkLog) -> None:
-    """Save worklog to YAML file."""
+    """Save worklog to YAML file.
+
+    Automatically creates .bam/ structure if it doesn't exist.
+    """
+    from .paths import ensure_bam_dir
+
+    # Ensure .bam/ exists before writing
+    ensure_bam_dir(project_root)
+
     worklog_path = get_worklog_path(project_root)
     worklog_path.parent.mkdir(parents=True, exist_ok=True)
 

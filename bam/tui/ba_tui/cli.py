@@ -773,7 +773,7 @@ Examples:
     log_parser = subparsers.add_parser(
         "log",
         help="Append a worklog entry",
-        description="Add structured entry to log/tasks.yaml with time tracking.",
+        description="Add structured entry to .bam/log/tasks.yaml with time tracking.",
         epilog="""
 Examples:
   bam log                                    Open TUI to write entry
@@ -849,7 +849,7 @@ Examples:
         epilog="""
 Examples:
   bam artifact
-  bam artifact --register artifact/figure1.png --type figure
+  bam artifact --register .bam/artifact/figure1.png --type figure
   bam artifact --status delivered
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -236,20 +236,53 @@ The "Other" option is always available for custom text input.
 
 ## Generated Project Structure
 
-After `bam init`:
+The `.bam/` directory structure is created automatically on first use (no need to run `bam init`):
 
 ```
 my-project/
-├── manifest.yaml       # Project metadata
-├── data -> /local/path # Symlink to data cache
-├── doc/
-│   └── method.md
-├── artifact/
-│   └── results.md
-├── log/
-│   └── tasks.yaml      # Task-based worklog
-├── ideas/
-└── README.md
+├── manifest.yaml          # Project metadata (at root for easy discovery)
+├── data -> /local/path    # Symlink to data cache (if configured)
+└── .bam/                  # All BAM-managed outputs (auto-created)
+    ├── log/
+    │   └── tasks.yaml     # Task-based worklog
+    ├── ideas/             # Idea markdown files
+    ├── doc/               # Documentation (e.g., method.md)
+    ├── artifact/          # Output artifacts
+    └── templates/         # User-facing templates
+```
+
+**Note:** Running `bam log`, `bam idea`, or any other command will automatically create the `.bam/` structure as needed.
+
+### Migration from Old Structure
+
+Existing projects with root-level directories (`log/`, `ideas/`, etc.) continue to work automatically via fallback detection. New files will be created in `.bam/` while old files remain accessible at the root.
+
+To migrate an existing project to the new structure:
+
+```bash
+# Manually move directories (recommended to commit first)
+mkdir -p .bam
+mv log ideas doc artifact templates .bam/
+
+# Update manifest.yaml worklog path
+# Change: file_path: "log/tasks.yaml"
+# To:     file_path: ".bam/log/tasks.yaml"
+```
+
+### Recommended .gitignore
+
+```gitignore
+# BAM outputs (generated files and logs)
+.bam/log/
+.bam/ideas/
+.bam/doc/
+.bam/artifact/
+
+# Keep templates in version control
+!.bam/templates/
+
+# Keep manifest at root
+manifest.yaml
 ```
 
 ## Development

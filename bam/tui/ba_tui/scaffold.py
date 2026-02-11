@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 
 from .models import Artifact, Manifest
+from .paths import ensure_bam_dir, resolve_output_dir
 
 
 def templates_root() -> Path:
@@ -13,19 +12,38 @@ def templates_root() -> Path:
 
 
 def ensure_directories(project_root: Path) -> None:
-    for name in ("doc", "artifact", "log", "ideas"):
-        (project_root / name).mkdir(parents=True, exist_ok=True)
+    """Ensure all output directories exist under .bam/."""
+    # Ensure .bam directory exists
+    ensure_bam_dir(project_root)
+
+    # Create all output subdirectories under .bam/
+    for name in ("doc", "artifact", "log", "ideas", "templates"):
+        output_dir = resolve_output_dir(project_root, name)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
 
 def ensure_worklog(project_root: Path) -> Path:
-    """Ensure log directory exists and return tasks.yaml path."""
-    log_dir = project_root / "log"
+    """Ensure log directory exists and return tasks.yaml path.
+
+    Automatically creates .bam/ structure if it doesn't exist.
+    """
+    # Ensure .bam/ exists first
+    ensure_bam_dir(project_root)
+
+    log_dir = resolve_output_dir(project_root, "log")
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / "tasks.yaml"
 
 
 def ensure_log_types_template(project_root: Path) -> Path:
-    templates_dir = project_root / "templates"
+    """Ensure log-types template exists in templates directory.
+
+    Automatically creates .bam/ structure if it doesn't exist.
+    """
+    # Ensure .bam/ exists first
+    ensure_bam_dir(project_root)
+
+    templates_dir = resolve_output_dir(project_root, "templates")
     templates_dir.mkdir(parents=True, exist_ok=True)
     target = templates_dir / "log-types.yaml"
     if not target.exists():
@@ -53,7 +71,14 @@ def render_template(name: str, context: dict[str, str]) -> str:
 
 
 def create_idea_file(project_root: Path, title: str, priority: str, problem: str, approach: str) -> Path:
-    ideas_dir = project_root / "ideas"
+    """Create idea markdown file in .bam/ideas/ directory.
+
+    Automatically creates .bam/ structure if it doesn't exist.
+    """
+    # Ensure .bam/ exists before writing
+    ensure_bam_dir(project_root)
+
+    ideas_dir = resolve_output_dir(project_root, "ideas")
     ideas_dir.mkdir(parents=True, exist_ok=True)
     slug = slugify(title)
     idea_path = ideas_dir / f"{slug}.md"

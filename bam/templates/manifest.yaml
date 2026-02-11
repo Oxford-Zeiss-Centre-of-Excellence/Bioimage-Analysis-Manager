@@ -95,7 +95,7 @@ tools:
 # METHOD - Analysis method documentation
 # =========================================================================
 method:
-  file_path: ""               # Path to method.md (e.g., doc/method.md)
+  file_path: ""               # Path to method.md (e.g., .bam/doc/method.md)
   template_used: ""           # Template name if created from UI
 
 # =========================================================================
@@ -137,7 +137,7 @@ billing:
 # WORKLOG - Time tracking and task logging (Log tab)
 # ============================================================================
 worklog:
-  file_path: "log/tasks.yaml" # Path to worklog data file (external storage)
+  file_path: ".bam/log/tasks.yaml" # Path to worklog data file (external storage)
   version: 2                  # Schema version (for future migrations)
   created: null               # Auto-set when worklog initialized
   last_updated: null          # Auto-updated on save
